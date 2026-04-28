@@ -459,8 +459,10 @@ async function fetchCajas(gid, anio, mes) {
     const obj_diario = iObj >= 0 ? (parseNum(row[iObj]) || null) : null;
     const total = totalHoja || totalCalculado;
 
-    // No guardamos días vacíos/futuros: evitan duplicados y no cuentan como "días con datos".
-    if (!facturado && !total && !efectivo && !tarjeta_caixa && !tarjeta_kutxa && !tarjeta_sabadell && !tarjeta_cajamar && !tarjeta_bbva && !transferencia && !financiacion && !gasto) continue;
+    // No guardamos días sin movimiento real de caja.
+    // Aunque la hoja tenga filas de calendario o días marcados, si todos los importes son 0 no debe entrar en tesorería.
+    const tieneMovimiento = [efectivo, tarjeta_caixa, tarjeta_kutxa, tarjeta_sabadell, tarjeta_cajamar, tarjeta_bbva, transferencia, financiacion, gasto, total].some(v => Math.abs(v || 0) > 0.0001);
+    if (!tieneMovimiento) continue;
     
     records.push({
       fecha: `${anio}-${String(mes).padStart(2,'0')}-${String(dia).padStart(2,'0')}`,
@@ -696,7 +698,7 @@ async function loadDB() {
     sb.from('devoluciones').select('*').order('fecha_solicitud', { ascending: false }),
     sb.from('trabajadores').select('*').order('nombre'),
   ]);
-  D.cajas = c.data || []; D.gastos = g.data || []; D.fins = f.data || [];
+  D.cajas = (c.data || []).filter(esCajaReal); D.gastos = g.data || []; D.fins = f.data || [];
   D.devs = dv.data || []; D.workers = w.data || [];
   const ls = localStorage.getItem('cd_last_sync');
   if (ls) set('lsync', 'Última sync: ' + ls);
@@ -731,6 +733,15 @@ function renderEmpresaBars() {
 function filtrarEmp(arr, campo='empresa') {
   if (empresaActual === 'Global') return arr;
   return arr.filter(r => (r[campo]||'').toLowerCase().includes(empresaActual.toLowerCase()));
+}
+
+function esCajaReal(c) {
+  if (!c || !c.fecha || !/^\d{4}-\d{2}-\d{2}$/.test(String(c.fecha).slice(0,10))) return false;
+  const [y,m,d] = String(c.fecha).slice(0,10).split('-').map(Number);
+  const maxDay = new Date(y, m, 0).getDate();
+  if (!d || d < 1 || d > maxDay) return false;
+  return [c.efectivo,c.tarjeta_caixa,c.tarjeta_kutxa,c.tarjeta_sabadell,c.tarjeta_cajamar,c.tarjeta_bbva,c.transferencia,c.financiacion,c.gasto,c.total]
+    .some(v => Math.abs(Number(v) || 0) > 0.0001);
 }
 
 function renderAll() {
@@ -779,38 +790,46 @@ function renderResumen() {
 
 function renderTes() {
   const sel = document.getElementById('mes-sel');
-  const cajasBase = filtrarEmp(D.cajas, 'empresa');
-  const meses = [...new Set(cajasBase.map(c => c.fecha.slice(0, 7)))].sort();
+  const cajasBase = filtrarEmp(D.cajas, 'empresa').filter(esCajaReal).sort((a,b) => String(a.fecha).localeCompare(String(b.fecha)));
+  const meses = [...new Set(cajasBase.map(c => String(c.fecha).slice(0, 7)))].sort();
   const prevMes = sel.value;
   sel.innerHTML = '';
-  meses.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = M[+m.slice(5)-1] + ' ' + m.slice(0,4); sel.appendChild(o); });
-  const mes = meses.includes(prevMes) ? prevMes : (meses[0] || '');
+  meses.forEach(m => {
+    const totalMes = cajasBase.filter(c => String(c.fecha).startsWith(m)).reduce((s,c)=>s+(Number(c.total)||0),0);
+    const o = document.createElement('option');
+    o.value = m;
+    o.textContent = `${M[+m.slice(5)-1]} ${m.slice(0,4)} · ${eur(totalMes)}`;
+    sel.appendChild(o);
+  });
+
+  // Mejor por defecto: el último mes con movimientos reales. Evita que se quede seleccionado un mes vacío antiguo.
+  const mes = meses.includes(prevMes) ? prevMes : (meses[meses.length - 1] || '');
   if (!mes) {
     set('t-tot', eur(0)); set('t-dias', 'Sin datos'); set('t-obj', '—'); set('t-obj-s', ''); set('t-ef', eur(0)); set('t-ef-s', ''); set('t-fi', eur(0)); set('t-fi-s', '');
-    document.getElementById('tb-tes').innerHTML = '';
+    document.getElementById('tb-tes').innerHTML = '<tr><td colspan="7" style="color:var(--text3);text-align:center;padding:24px">No hay movimientos de caja guardados para la empresa seleccionada.</td></tr>';
     mkChart('c-caja', 'line', [], [{ data: [] }]);
     return;
   }
   sel.value = mes;
-  const cajas = cajasBase.filter(c => c.fecha.startsWith(mes));
-  const tot = cajas.reduce((s, c) => s + (c.total || 0), 0);
-  const ef = cajas.reduce((s, c) => s + (c.efectivo || 0), 0);
-  const fi = cajas.reduce((s, c) => s + (c.financiacion || 0), 0);
-  const obj = cajas.find(c => c.obj_diario)?.obj_diario || 0;
-  const cum = cajas.filter(c => c.facturado && (c.total || 0) >= (c.obj_diario || obj)).length;
-  set('t-tot', eur(tot)); set('t-dias', cajas.length + ' días con datos');
-  set('t-obj', obj ? eur(obj) : '—'); set('t-obj-s', cum + '/' + cajas.length + ' días cumplidos');
+  const cajas = cajasBase.filter(c => String(c.fecha).startsWith(mes));
+  const tot = cajas.reduce((s, c) => s + (Number(c.total) || 0), 0);
+  const ef = cajas.reduce((s, c) => s + (Number(c.efectivo) || 0), 0);
+  const fi = cajas.reduce((s, c) => s + (Number(c.financiacion) || 0), 0);
+  const obj = cajas.find(c => Number(c.obj_diario) > 0)?.obj_diario || 0;
+  const cum = cajas.filter(c => (Number(c.total) || 0) >= (Number(c.obj_diario) || Number(obj) || 0)).length;
+  set('t-tot', eur(tot)); set('t-dias', cajas.length + ' días con caja');
+  set('t-obj', obj ? eur(obj) : '—'); set('t-obj-s', obj ? (cum + '/' + cajas.length + ' días cumplidos') : 'Sin objetivo diario');
   set('t-ef', eur(ef)); set('t-ef-s', tot > 0 ? ((ef/tot)*100).toFixed(1) + '% del total' : '');
   set('t-fi', eur(fi)); set('t-fi-s', tot > 0 ? ((fi/tot)*100).toFixed(1) + '% del total' : '');
-  const dias = cajas.map(c => new Date(c.fecha + 'T12:00').getDate().toString());
+  const dias = cajas.map(c => new Date(String(c.fecha).slice(0,10) + 'T12:00').getDate().toString());
   mkChart('c-caja', 'line', dias, [
-    { label: 'Cobrado', data: cajas.map(c => c.total || 0), borderColor: '#1B5FA8', backgroundColor: 'rgba(27,95,168,0.08)', fill: true, tension: 0.4, pointRadius: 3 },
-    { label: 'Objetivo', data: cajas.map(c => c.obj_diario || obj), borderColor: '#D4502A', borderDash: [5, 3], pointRadius: 0 }
+    { label: 'Cobrado', data: cajas.map(c => Number(c.total) || 0), borderColor: '#1B5FA8', backgroundColor: 'rgba(27,95,168,0.08)', fill: true, tension: 0.4, pointRadius: 3 },
+    { label: 'Objetivo', data: cajas.map(c => Number(c.obj_diario) || Number(obj) || 0), borderColor: '#D4502A', borderDash: [5, 3], pointRadius: 0 }
   ]);
   document.getElementById('tb-tes').innerHTML = cajas.map(c => {
-    const tar = (c.tarjeta_caixa||0)+(c.tarjeta_kutxa||0)+(c.tarjeta_sabadell||0)+(c.tarjeta_cajamar||0)+(c.tarjeta_bbva||0);
-    const ok = c.facturado && (c.total||0) >= (c.obj_diario||obj);
-    return `<tr><td style="font-weight:500">${new Date(c.fecha+'T12:00').getDate()}</td><td>${eur(c.efectivo)}</td><td>${eur(tar)}</td><td>${eur(c.transferencia)}</td><td>${eur(c.financiacion)}</td><td class="tr" style="font-weight:600">${eur(c.total)}</td><td>${c.facturado ? `<span class="pill ${ok?'pg':'pa'}">${ok?'✓ Obj':'Bajo obj'}</span>` : '<span class="pill pz">Sin facturar</span>'}</td></tr>`;
+    const tar = (Number(c.tarjeta_caixa)||0)+(Number(c.tarjeta_kutxa)||0)+(Number(c.tarjeta_sabadell)||0)+(Number(c.tarjeta_cajamar)||0)+(Number(c.tarjeta_bbva)||0);
+    const ok = (Number(c.total)||0) >= (Number(c.obj_diario)||Number(obj)||0);
+    return `<tr><td style="font-weight:500">${new Date(String(c.fecha).slice(0,10)+'T12:00').getDate()}</td><td>${eur(Number(c.efectivo)||0)}</td><td>${eur(tar)}</td><td>${eur(Number(c.transferencia)||0)}</td><td>${eur(Number(c.financiacion)||0)}</td><td class="tr" style="font-weight:600">${eur(Number(c.total)||0)}</td><td>${obj ? `<span class="pill ${ok?'pg':'pa'}">${ok?'✓ Obj':'Bajo obj'}</span>` : '<span class="pill pb">Con caja</span>'}</td></tr>`;
   }).join('');
 }
 

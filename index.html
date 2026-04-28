@@ -441,7 +441,7 @@ async function fetchFins() {
   const text = await fetchText(csvUrl(GID.Fins));
   const rows = parseCSVFromRow(text, 0); // headers en fila 1 (índice 0)
   return rows
-    .filter(r => r['FF'] && r['FECHA'])
+    .filter(r => r['FF'] && r['FECHA'] && fixDate(r['FECHA']))
     .map(r => ({
       ff: r['FF'],
       fecha: fixDate(r['FECHA']),
@@ -462,13 +462,20 @@ async function fetchFins() {
 // Convierte fecha DD/MM/YYYY o DD-MM-YYYY a YYYY-MM-DD
 function fixDate(v) {
   if (!v) return null;
-  const s = String(v).trim();
-  // DD/MM/YYYY
+  const s = String(v).trim().replace(/\s/g,'');
+  if (!s) return null;
+  // DD/MM/YYYY o DD-MM-YYYY
   const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (m1) return `${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}`;
-  // YYYY-MM-DD already correct
+  // YYYY-MM-DD ya correcto
   if (s.match(/^\d{4}-\d{2}-\d{2}/)) return s.slice(0,10);
-  return s;
+  // Formato roto tipo "10/0472026" — intentar extraer números
+  const nums = s.replace(/[\/\-]/g,'');
+  if (nums.length === 8) {
+    // DDMMYYYY
+    return `${nums.slice(4,8)}-${nums.slice(2,4)}-${nums.slice(0,2)}`;
+  }
+  return null; // fecha inválida, descartar
 }
 function parseNum(v) {
   if (!v || v === '') return 0;

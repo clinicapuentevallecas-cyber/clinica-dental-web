@@ -574,7 +574,7 @@ async function syncSheets() {
   
   const log = [];
   try {
-    // 1. CAJAS
+    // 1. CAJAS — sequential to avoid race condition
     log.push('Descargando cajas...');
     const cajasAll = (await Promise.all([
       fetchCajas(GID.Enero26, 2026, 1),
@@ -585,10 +585,16 @@ async function syncSheets() {
     log.push(`Cajas: ${cajasAll.length} registros`);
     
     if (cajasAll.length) {
-      await sb.from('cajas_diarias').delete().gte('fecha', '2026-01-01').lte('fecha', '2026-12-31');
-      const { error: eC } = await sb.from('cajas_diarias').insert(cajasAll);
-      if (eC) log.push('ERROR cajas: ' + eC.message);
-      else { D.cajas = cajasAll; log.push('✓ Cajas guardadas'); }
+      // Delete first, wait, then insert
+      await sb.from('cajas_diarias').delete().gte('fecha', '2026-01-01');
+      // Insert in batches of 50 to avoid timeout
+      for (let i = 0; i < cajasAll.length; i += 50) {
+        const batch = cajasAll.slice(i, i + 50);
+        const { error: eC } = await sb.from('cajas_diarias').insert(batch);
+        if (eC) { log.push('ERROR cajas batch ' + i + ': ' + eC.message); break; }
+      }
+      D.cajas = cajasAll;
+      log.push('✓ Cajas guardadas');
     }
 
     // 2. GASTOS

@@ -311,7 +311,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-28-2 cargado: sin upsert/on_conflict en cajas");
+console.log("INDEX FINANCIERO v2026-04-28-3 cargado: financiaciones sin columna empresa");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -490,7 +490,6 @@ async function fetchFins() {
     .filter(r => r['FF'] && r['FECHA'] && fixDate(r['FECHA']))
     .map(r => ({
       ff: r['FF'],
-      empresa: 'Corporacion',
       fecha: fixDate(r['FECHA']),
       n_peticion: r['N.PETICION'] || '',
       canal: r['CANAL'] || '',
@@ -743,7 +742,8 @@ function renderAll() {
 function renderResumen() {
   const cajas = filtrarEmp(D.cajas, 'empresa');
   const gastos = filtrarEmp(D.gastos, 'empresa');
-  const fins = filtrarEmp(D.fins, 'empresa');
+  // La tabla financiaciones no tiene columna empresa en Supabase; se muestran globales.
+  const fins = D.fins;
   const fac = cajas.reduce((s, c) => s + (c.total || 0), 0);
   const gst = gastos.reduce((s, g) => s + (g.importe || 0), 0);
   const finOps = fins.reduce((s, f) => s + (f.financiado || 0), 0);

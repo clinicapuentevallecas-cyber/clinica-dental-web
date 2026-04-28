@@ -362,7 +362,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-28-13 cargado: prevision anual editable guardada en Supabase");
+console.log("INDEX FINANCIERO v2026-04-28-14 cargado: prevision anual con contenido desde objetivos, gastos y Supabase");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1266,10 +1266,18 @@ function getPrevOpening() {
   const latest = latestTesRecord();
   return Number(latest.total_caja_operativa) || 0;
 }
+function getPrevGastosBase() {
+  const all = Array.isArray(D.gastos) ? D.gastos : [];
+  const filtered = filtrarEmp(all, 'empresa');
+  // Si una empresa no tiene gastos propios todavía, usamos los gastos globales para que la previsión no quede vacía.
+  if (filtered.length || empresaActual === 'Global') return filtered;
+  return all;
+}
+
 function buildPrevData() {
   if (PREV_CONFIG_LOADED_FOR !== empresaActual) loadPrevConfigLocal();
   PREV_CONFIG = normPrevConfig(PREV_CONFIG);
-  const gastos = filtrarEmp(D.gastos, 'empresa');
+  const gastos = getPrevGastosBase();
   const byCat = {};
   gastos.forEach(g => {
     const fg = fechaFlujoGasto(g);
@@ -1280,11 +1288,16 @@ function buildPrevData() {
     byCat[cat] = byCat[cat] || {};
     byCat[cat][m] = (byCat[cat][m] || 0) + (Number(g.importe) || 0);
   });
-  const cats = Object.keys(byCat).sort((a,b) => {
+  let cats = Object.keys(byCat).sort((a,b) => {
     const ta = Array.from({length:12}, (_,i)=>byCat[a][i+1]||0).reduce((s,v)=>s+v,0);
     const tb = Array.from({length:12}, (_,i)=>byCat[b][i+1]||0).reduce((s,v)=>s+v,0);
     return tb - ta;
   });
+  if (!cats.length) {
+    // Mantiene el editor con estructura incluso si todavía no hay gastos sincronizados.
+    ['Personal','Laboratorio','Marketing','Alquiler','Software','Financiación','Impuestos','Otros'].forEach(cat => { byCat[cat] = {}; });
+    cats = Object.keys(byCat);
+  }
   const expenseRows = cats.map(cat => {
     const q1avg = ((byCat[cat][1]||0) + (byCat[cat][2]||0) + (byCat[cat][3]||0)) / 3;
     const vals = Array.from({length:12}, (_,i)=>byCat[cat][i+1]||0).filter(v => v > 0);
@@ -1326,7 +1339,7 @@ function renderPrev() {
   const scenEl = document.getElementById('prev-scenarios');
   if (scenEl) scenEl.innerHTML = PREV_SCENARIOS.map(s => `<button class="eb ${data.scenario.id===s.id?'active':''}" onclick="setPrevScenario('${s.id}')">${s.label}</button>`).join('');
   set('pa-ing', eur(data.totalIngresos)); set('pa-ing-s', data.scenario.label);
-  set('pa-gas', eur(data.totalGastos)); set('pa-gas-s', data.expenseRows.length + ' partidas');
+  set('pa-gas', eur(data.totalGastos)); set('pa-gas-s', data.expenseRows.length + ' partidas' + (getPrevGastosBase().length ? '' : ' · pendiente sincronizar gastos'));
   set('pa-bal', (data.totalBalance >= 0 ? '+' : '') + eur(data.totalBalance)); setC('pa-bal', 'mv ' + (data.totalBalance >= 0 ? 'up' : 'dn')); set('pa-bal-s', 'Ingresos - gastos');
   set('pa-tes', eur(data.tesoreriaFinal)); setC('pa-tes', 'mv ' + (data.tesoreriaFinal >= 0 ? 'up' : 'dn')); set('pa-tes-s', 'Partiendo de ' + eur(data.opening));
   mkChart('c-prev-anual', 'bar', data.monthly.map(r=>MS[r.m-1]), [

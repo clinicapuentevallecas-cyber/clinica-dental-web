@@ -240,7 +240,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 <!-- PREVISIÓN -->
 <div class="page" id="page-prevision">
   <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-    <div><div class="pt">Previsión anual y escenarios</div><div class="ps">Tres escenarios de ventas con los mismos gastos por partida. Editable por mes.</div></div>
+    <div><div class="pt">Previsión anual y escenarios</div><div class="ps">Tres escenarios de ventas con los mismos gastos por partida. Editable por mes y guardado en Supabase.</div></div>
     <div id="empresa-bar-p" class="empresa-bar" style="margin-bottom:0"></div>
   </div>
   <div class="card mb">
@@ -248,12 +248,13 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
       <div>
         <div class="ct" style="margin:0">Escenario activo</div>
         <div style="font-size:12px;color:var(--text3);margin-top:4px">Los ingresos parten del objetivo mensual. Los gastos se mantienen iguales en los tres escenarios.</div>
+        <div id="prev-save-status" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
       </div>
       <div id="prev-scenarios" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       <div style="display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap">
         <span style="font-size:12px;color:var(--text3)">Saldo inicial caja operativa</span>
-        <input id="prev-opening" type="number" step="0.01" style="width:140px;padding:7px 9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);font-family:'DM Sans';font-size:12px">
-        <button class="eb" onclick="savePrevOpening()">Guardar</button>
+        <input id="prev-opening" type="number" step="0.01" onchange="setPrevOpening(this.value)" style="width:140px;padding:7px 9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);font-family:'DM Sans';font-size:12px">
+        <button class="eb" onclick="savePrevConfigToSupabase(true)">Guardar</button>
       </div>
     </div>
   </div>
@@ -361,7 +362,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-28-12 cargado: prevision anual editable con escenarios objetivo, +5 y +10");
+console.log("INDEX FINANCIERO v2026-04-28-13 cargado: prevision anual editable guardada en Supabase");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -908,6 +909,7 @@ async function loadDB() {
   D.devs = dv.data || []; D.workers = w.data || [];
   const ls = localStorage.getItem('cd_last_sync');
   if (ls) set('lsync', 'Última sync: ' + ls);
+  await loadPrevConfigFromSupabase();
   renderAll();
 }
 
@@ -920,9 +922,10 @@ async function loadDB() {
 const EMPRESAS = ['Global','Corporacion','Bridge','Vallecas Las'];
 let empresaActual = 'Global';
 
-function setEmpresa(emp) {
+async function setEmpresa(emp) {
   empresaActual = emp;
   renderEmpresaBars();
+  await loadPrevConfigFromSupabase();
   renderAll();
 }
 
@@ -1171,32 +1174,178 @@ function filterG() {
   }).join('');
 }
 
-function renderPrev() {
-  const cajas = filtrarEmp(D.cajas, 'empresa');
+
+const PREV_SCENARIOS = [
+  { id: 'objetivo', label: 'Ventas objetivo', mult: 1 },
+  { id: 'objetivo5', label: 'Objetivo + 5%', mult: 1.05 },
+  { id: 'objetivo10', label: 'Objetivo + 10%', mult: 1.10 },
+];
+let prevScenarioId = 'objetivo';
+let PREV_CONFIG = { opening: null, ventas: {}, gastos: {} };
+let PREV_CONFIG_LOADED_FOR = null;
+let PREV_SAVE_TIMER = null;
+
+function prevCfgKey() { return 'prev_config_' + empresaActual + '_2026'; }
+function safeNum(v) { const n = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(n) ? n : null; }
+function normPrevConfig(cfg) {
+  cfg = cfg && typeof cfg === 'object' ? cfg : {};
+  cfg.opening = cfg.opening ?? null;
+  cfg.ventas = cfg.ventas && typeof cfg.ventas === 'object' ? cfg.ventas : {};
+  cfg.gastos = cfg.gastos && typeof cfg.gastos === 'object' ? cfg.gastos : {};
+  return cfg;
+}
+function setPrevStatus(msg, cls='') {
+  const el = document.getElementById('prev-save-status');
+  if (el) { el.innerHTML = msg || ''; el.style.color = cls === 'err' ? 'var(--red)' : cls === 'ok' ? 'var(--green)' : 'var(--text3)'; }
+}
+function loadPrevConfigLocal() {
+  try { PREV_CONFIG = normPrevConfig(JSON.parse(localStorage.getItem(prevCfgKey()) || '{}')); }
+  catch (_) { PREV_CONFIG = normPrevConfig({}); }
+  PREV_CONFIG_LOADED_FOR = empresaActual;
+}
+async function loadPrevConfigFromSupabase() {
+  loadPrevConfigLocal();
+  if (!sb) { setPrevStatus('Previsión cargada localmente. Configura Supabase para compartirla.'); return; }
+  const { data, error } = await sb.from('prevision_config').select('config').eq('empresa', empresaActual).eq('anio', 2026).maybeSingle();
+  if (error) {
+    setPrevStatus('Previsión en modo local: crea la tabla prevision_config en Supabase.', 'err');
+    console.warn('No se pudo cargar prevision_config:', error.message);
+    return;
+  }
+  if (data && data.config) {
+    PREV_CONFIG = normPrevConfig(data.config);
+    localStorage.setItem(prevCfgKey(), JSON.stringify(PREV_CONFIG));
+  }
+  PREV_CONFIG_LOADED_FOR = empresaActual;
+  setPrevStatus('Previsión cargada desde Supabase.', 'ok');
+}
+async function savePrevConfigToSupabase(showAlert=false) {
+  PREV_CONFIG = normPrevConfig(PREV_CONFIG);
+  localStorage.setItem(prevCfgKey(), JSON.stringify(PREV_CONFIG));
+  if (!sb) { setPrevStatus('Guardado local. Configura Supabase para compartirlo.'); return; }
+  setPrevStatus('Guardando previsión en Supabase...');
+  const payload = { empresa: empresaActual, anio: 2026, config: PREV_CONFIG, updated_at: new Date().toISOString() };
+  const { error } = await sb.from('prevision_config').upsert(payload, { onConflict: 'empresa,anio' });
+  if (error) {
+    setPrevStatus('No se pudo guardar en Supabase. Revisa que exista la tabla prevision_config.', 'err');
+    console.error('Error guardando prevision_config:', error);
+    if (showAlert) alert('No se pudo guardar en Supabase: ' + error.message + '\n\nCrea la tabla prevision_config con el SQL indicado. De momento queda guardado localmente.');
+    return;
+  }
+  setPrevStatus('Previsión guardada en Supabase.', 'ok');
+}
+function queueSavePrevConfig() {
+  clearTimeout(PREV_SAVE_TIMER);
+  PREV_SAVE_TIMER = setTimeout(() => savePrevConfigToSupabase(false), 500);
+}
+function setPrevOpening(value) {
+  const n = safeNum(value);
+  PREV_CONFIG.opening = n == null ? null : n;
+  renderPrev();
+  queueSavePrevConfig();
+}
+function setPrevScenario(id) { prevScenarioId = id; renderPrev(); }
+function setPrevVentaBase(mes, value) {
+  const n = safeNum(value);
+  PREV_CONFIG.ventas[String(mes)] = n == null ? undefined : n;
+  if (n == null) delete PREV_CONFIG.ventas[String(mes)];
+  renderPrev();
+  queueSavePrevConfig();
+}
+function setPrevGasto(partidaEnc, mes, value) {
+  const partida = decodeURIComponent(partidaEnc);
+  const n = safeNum(value);
+  PREV_CONFIG.gastos[partida] = PREV_CONFIG.gastos[partida] || {};
+  if (n == null) delete PREV_CONFIG.gastos[partida][String(mes)];
+  else PREV_CONFIG.gastos[partida][String(mes)] = n;
+  renderPrev();
+  queueSavePrevConfig();
+}
+function getPrevOpening() {
+  if (PREV_CONFIG.opening != null && Number.isFinite(Number(PREV_CONFIG.opening))) return Number(PREV_CONFIG.opening);
+  const latest = latestTesRecord();
+  return Number(latest.total_caja_operativa) || 0;
+}
+function buildPrevData() {
+  if (PREV_CONFIG_LOADED_FOR !== empresaActual) loadPrevConfigLocal();
+  PREV_CONFIG = normPrevConfig(PREV_CONFIG);
   const gastos = filtrarEmp(D.gastos, 'empresa');
-  const cm = {}; cajas.forEach(c => { const m = +c.fecha.slice(5,7); cm[m] = (cm[m]||0) + (c.total||0); });
-  const gm = {}; gastos.forEach(g => { const fg = fechaFlujoGasto(g); if (fg) { const m = +String(fg).slice(5,7); gm[m] = (gm[m]||0) + (g.importe||0); } });
-  let acc = 0;
-  const rows = [1,2,3,4].map(m => {
-    const fac = cm[m] || null, gst = gm[m] || 0, bal = fac != null ? fac - gst : null;
-    acc += (bal || 0);
-    return { m, mes: M[m-1], fac, gst, bal, acc };
+  const byCat = {};
+  gastos.forEach(g => {
+    const fg = fechaFlujoGasto(g);
+    if (!fg) return;
+    const m = +String(fg).slice(5,7);
+    if (!m || m < 1 || m > 12) return;
+    const cat = (g.fuente_gasto || 'Sin categoría').trim() || 'Sin categoría';
+    byCat[cat] = byCat[cat] || {};
+    byCat[cat][m] = (byCat[cat][m] || 0) + (Number(g.importe) || 0);
   });
-  const ids = ['p-1','p-2','p-3','p-4'];
-  rows.forEach((r, i) => {
-    set(ids[i], r.bal != null ? (r.bal >= 0 ? '+' : '') + eur(r.bal) : '—');
-    setC(ids[i], 'mv ' + (r.bal == null ? '' : r.bal >= 0 ? 'up' : 'dn'));
-    set(ids[i]+'s', r.fac ? eur(r.fac) + ' facturado' : 'Sin datos');
+  const cats = Object.keys(byCat).sort((a,b) => {
+    const ta = Array.from({length:12}, (_,i)=>byCat[a][i+1]||0).reduce((s,v)=>s+v,0);
+    const tb = Array.from({length:12}, (_,i)=>byCat[b][i+1]||0).reduce((s,v)=>s+v,0);
+    return tb - ta;
   });
-  mkChart('c-prev', 'bar', rows.map(r => r.mes.slice(0,3)), [
-    { label: 'Facturado', data: rows.map(r => r.fac || 0), backgroundColor: '#1B5FA8', borderRadius: 4 },
-    { label: 'Gastado', data: rows.map(r => r.gst), backgroundColor: '#D4502A', borderRadius: 4 },
-  ]);
-  let a2 = 0;
-  document.getElementById('tb-prev').innerHTML = rows.map(r => {
-    a2 += (r.bal || 0);
-    return `<tr><td style="font-weight:500">${r.mes}</td><td class="tr">${r.fac ? eur(r.fac) : '—'}</td><td class="tr">${eur(r.gst)}</td><td class="tr" style="font-weight:600;color:${r.bal==null?'var(--text3)':r.bal>=0?'var(--green)':'var(--red)'}">${r.bal!=null?(r.bal>=0?'+':'')+eur(r.bal):'—'}</td><td class="tr" style="font-weight:600">${eur(a2)}</td></tr>`;
-  }).join('');
+  const expenseRows = cats.map(cat => {
+    const q1avg = ((byCat[cat][1]||0) + (byCat[cat][2]||0) + (byCat[cat][3]||0)) / 3;
+    const vals = Array.from({length:12}, (_,i)=>byCat[cat][i+1]||0).filter(v => v > 0);
+    const fallback = vals.length ? vals.reduce((s,v)=>s+v,0) / vals.length : 0;
+    const monthly = {}, source = {};
+    for (let m=1; m<=12; m++) {
+      let val = byCat[cat][m];
+      let src = val > 0 ? 'Real' : (q1avg > 0 ? 'Media T1' : (fallback > 0 ? 'Media disponible' : 'Sin dato'));
+      if (!(val > 0)) val = q1avg > 0 ? q1avg : fallback;
+      const edit = PREV_CONFIG.gastos?.[cat]?.[String(m)];
+      if (edit != null && Number.isFinite(Number(edit))) { val = Number(edit); src = 'Editado Supabase'; }
+      monthly[m] = Math.max(0, Number(val) || 0);
+      source[m] = src;
+    }
+    return { cat, q1avg, monthly, source, total: Array.from({length:12}, (_,i)=>monthly[i+1]||0).reduce((s,v)=>s+v,0) };
+  });
+  const ventasBase = {}, ventasOrigen = {};
+  for (let m=1; m<=12; m++) {
+    const edit = PREV_CONFIG.ventas?.[String(m)];
+    ventasBase[m] = edit != null && Number.isFinite(Number(edit)) ? Number(edit) : (OBJ[m] || 0);
+    ventasOrigen[m] = edit != null ? 'Editado Supabase' : 'Objetivo';
+  }
+  const scenario = PREV_SCENARIOS.find(s=>s.id===prevScenarioId) || PREV_SCENARIOS[0];
+  const monthly = [];
+  let tes = getPrevOpening();
+  for (let m=1; m<=12; m++) {
+    const ingresos = (ventasBase[m] || 0) * scenario.mult;
+    const gastosMes = expenseRows.reduce((s,r)=>s+(r.monthly[m]||0),0);
+    const balance = ingresos - gastosMes;
+    tes += balance;
+    monthly.push({ m, mes: M[m-1], ingresos, gastos: gastosMes, balance, tesoreria: tes });
+  }
+  return { scenario, opening: getPrevOpening(), ventasBase, ventasOrigen, expenseRows, monthly, totalIngresos: monthly.reduce((s,r)=>s+r.ingresos,0), totalGastos: monthly.reduce((s,r)=>s+r.gastos,0), totalBalance: monthly.reduce((s,r)=>s+r.balance,0), tesoreriaFinal: monthly[11]?.tesoreria || getPrevOpening() };
+}
+function renderPrev() {
+  const data = buildPrevData();
+  const openingEl = document.getElementById('prev-opening');
+  if (openingEl && document.activeElement !== openingEl) openingEl.value = Math.round(data.opening || 0);
+  const scenEl = document.getElementById('prev-scenarios');
+  if (scenEl) scenEl.innerHTML = PREV_SCENARIOS.map(s => `<button class="eb ${data.scenario.id===s.id?'active':''}" onclick="setPrevScenario('${s.id}')">${s.label}</button>`).join('');
+  set('pa-ing', eur(data.totalIngresos)); set('pa-ing-s', data.scenario.label);
+  set('pa-gas', eur(data.totalGastos)); set('pa-gas-s', data.expenseRows.length + ' partidas');
+  set('pa-bal', (data.totalBalance >= 0 ? '+' : '') + eur(data.totalBalance)); setC('pa-bal', 'mv ' + (data.totalBalance >= 0 ? 'up' : 'dn')); set('pa-bal-s', 'Ingresos - gastos');
+  set('pa-tes', eur(data.tesoreriaFinal)); setC('pa-tes', 'mv ' + (data.tesoreriaFinal >= 0 ? 'up' : 'dn')); set('pa-tes-s', 'Partiendo de ' + eur(data.opening));
+  mkChart('c-prev-anual', 'bar', data.monthly.map(r=>MS[r.m-1]), [
+    { label:'Ingresos', data:data.monthly.map(r=>Math.round(r.ingresos)), backgroundColor:'#1B5FA8', borderRadius:4, barPercentage:0.72 },
+    { label:'Gastos', data:data.monthly.map(r=>Math.round(r.gastos)), backgroundColor:'#D4502A', borderRadius:4, barPercentage:0.72 },
+    { label:'Tesorería prevista', type:'line', data:data.monthly.map(r=>Math.round(r.tesoreria)), borderColor:'#1A9E72', backgroundColor:'#1A9E72', tension:0.25, pointRadius:3 }
+  ], { plugins:{ legend:{ display:true, labels:{ boxWidth:10, font:{ family:'DM Sans', size:11 } } }, tooltip:{ callbacks:{ label:c=>eur(c.raw) } } } });
+  const sorted = data.expenseRows.slice().sort((a,b)=>b.total-a.total);
+  const top = sorted.slice(0,6), rest = sorted.slice(6);
+  const ds = top.map((r,i)=>({ label:r.cat, data:Array.from({length:12},(_,j)=>Math.round(r.monthly[j+1]||0)), backgroundColor:COLORS[i%COLORS.length], stack:'g' }));
+  if (rest.length) ds.push({ label:'Resto', data:Array.from({length:12},(_,j)=>Math.round(rest.reduce((s,r)=>s+(r.monthly[j+1]||0),0))), backgroundColor:'#C9C6C0', stack:'g' });
+  mkChart('c-prev-part', 'bar', MS, ds, { plugins:{ legend:{ display:true, labels:{ boxWidth:10, font:{ family:'DM Sans', size:11 } } }, tooltip:{ callbacks:{ label:c=>eur(c.raw) } } }, scales:{ x:{ stacked:true, grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ font:{ size:11, family:'DM Sans' }, color:'#A8A59F' } }, y:{ stacked:true, grid:{ color:'rgba(0,0,0,0.04)' }, ticks:{ font:{ size:11, family:'DM Sans' }, color:'#A8A59F', callback:v=>v>=1000?(v/1000).toFixed(0)+'k':v } } } });
+  const tb = document.getElementById('tb-prev-annual');
+  if (tb) tb.innerHTML = data.monthly.map(r=>`<tr><td style="font-weight:500">${r.mes}</td><td class="tr">${eur(r.ingresos)}</td><td class="tr">${eur(r.gastos)}</td><td class="tr" style="font-weight:600;color:${r.balance>=0?'var(--green)':'var(--red)'}">${r.balance>=0?'+':''}${eur(r.balance)}</td><td class="tr" style="font-weight:600;color:${r.tesoreria>=0?'var(--green)':'var(--red)'}">${eur(r.tesoreria)}</td></tr>`).join('');
+  const ventasRow = `<tr><td style="font-weight:600">Ventas base</td><td style="font-size:12px;color:var(--text3)">Objetivo editable</td>${Array.from({length:12},(_,i)=>{const m=i+1;return `<td><input type="number" value="${Math.round(data.ventasBase[m]||0)}" onchange="setPrevVentaBase(${m}, this.value)" style="width:92px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"></td>`}).join('')}<td class="tr" style="font-weight:600">${eur(Object.values(data.ventasBase).reduce((s,v)=>s+(v||0),0))}</td></tr>`;
+  const rowsHtml = data.expenseRows.map(r=>{ const enc=encodeURIComponent(r.cat); return `<tr><td style="font-weight:500">${r.cat}</td><td style="font-size:12px;color:var(--text3)">Media T1: ${eur(r.q1avg)}</td>${Array.from({length:12},(_,i)=>{const m=i+1, src=r.source[m]||''; return `<td><input type="number" value="${Math.round(r.monthly[m]||0)}" onchange="setPrevGasto('${enc}', ${m}, this.value)" title="${src}" style="width:92px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:${src.startsWith('Editado')?'#F4EDE2':'var(--bg)'};font-family:'DM Sans';font-size:12px"></td>`}).join('')}<td class="tr" style="font-weight:600">${eur(r.total)}</td></tr>`; }).join('');
+  const editTb = document.getElementById('tb-prev-edit'); if (editTb) editTb.innerHTML = ventasRow + rowsHtml;
+  const edits = (PREV_CONFIG.opening != null ? 1 : 0) + Object.keys(PREV_CONFIG.ventas||{}).length + Object.values(PREV_CONFIG.gastos||{}).reduce((s,o)=>s+Object.keys(o||{}).length,0);
+  set('prev-edit-info', edits ? edits + ' ajuste' + (edits!==1?'s':'') + ' guardado' + (edits!==1?'s':'') : 'Sin ajustes manuales');
 }
 
 function renderFins() {

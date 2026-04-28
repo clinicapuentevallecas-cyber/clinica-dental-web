@@ -195,12 +195,12 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
   <div class="g2 mb">
     <div class="card"><div class="ct">Uso de líneas de crédito</div><div style="height:230px;position:relative"><canvas id="c-bank-lines"></canvas></div></div>
     <div class="card"><div class="ct">Cómo impacta en tesorería</div>
-      <div class="al as2">✓ Las líneas de crédito no se tratan como ingreso: se muestran como <strong>liquidez disponible</strong>.</div>
+      <div class="al as2">✓ Las líneas de crédito no se tratan como ingreso: el Excel indica el <strong>disponible</strong> y el sistema calcula <strong>dispuesto = límite - disponible</strong>.</div>
       <div class="al aw">⚠️ Lo dispuesto reduce el disponible y aumenta la deuda bancaria utilizada.</div>
       <div class="al" style="background:var(--accent-light);color:#0C3E78;border:1px solid rgba(27,95,168,.15)">ℹ️ El crédito BBVA de 30.000 € se muestra como deuda/principal inicial, no como caja recurrente.</div>
     </div>
   </div>
-  <div class="card"><div class="ct">Detalle de productos</div><div class="tw"><table><thead><tr><th>Banco</th><th>Producto</th><th class="tr">Límite / Inicial</th><th class="tr">Dispuesto</th><th class="tr">Disponible</th><th>Uso</th><th>Origen</th></tr></thead><tbody id="tb-bank-products"></tbody></table></div></div>
+  <div class="card"><div class="ct">Detalle de productos</div><div class="tw"><table><thead><tr><th>Banco</th><th>Producto</th><th class="tr">Límite / Inicial</th><th class="tr">Disponible</th><th class="tr">Dispuesto</th><th>Uso</th><th>Origen</th></tr></thead><tbody id="tb-bank-products"></tbody></table></div></div>
 </div>
 
 <div class="page" id="page-gastos">
@@ -339,7 +339,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-28-7 cargado: productos bancarios integrados en tesoreria");
+console.log("INDEX FINANCIERO v2026-04-28-8 cargado: lineas de credito usan DISPONIBLE del Excel y calculan dispuesto = limite - disponible");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -729,15 +729,31 @@ const fdate = d => d ? String(d).slice(0, 10) : '—';
 // PRODUCTOS BANCARIOS
 // ============================================================
 const BANK_PRODUCTS = [
-  { id: 'sabadell_linea', banco: 'Banco Sabadell', producto: 'Línea de crédito', tipo: 'linea', limite: 30000, origen: 'Automático si existe: Sabadell línea en B40:N42' },
-  { id: 'bbva_linea', banco: 'BBVA', producto: 'Línea de crédito', tipo: 'linea', limite: 40000, origen: 'Manual' },
+  { id: 'sabadell_linea', banco: 'Banco Sabadell', producto: 'Línea de crédito', tipo: 'linea', limite: 30000, origen: 'Disponible automático desde Sabadell línea en B40:N42' },
+  { id: 'bbva_linea', banco: 'BBVA', producto: 'Línea de crédito', tipo: 'linea', limite: 40000, origen: 'Disponible automático desde BBVA en B40:N42' },
   { id: 'bbva_credito', banco: 'BBVA', producto: 'Crédito', tipo: 'prestamo', principal: 30000, origen: 'Principal inicial contratado' },
 ];
 function latestTesRecord() { const arr = (D.tes || []).slice().sort((a,b) => String(a.mes).localeCompare(String(b.mes))); return arr[arr.length - 1] || {}; }
-function manualBankValue(id) { const raw = localStorage.getItem('bp_dispuesto_' + id); if (raw === null || raw === '') return null; const n = Number(raw); return Number.isFinite(n) ? Math.max(0, n) : null; }
-function setManualBankValue(id, value) { const n = Math.max(0, Number(String(value).replace(',', '.')) || 0); localStorage.setItem('bp_dispuesto_' + id, String(n)); renderProductos(); renderTes(); }
-function getBankProductsComputed() { const latest = latestTesRecord(); const sabadellAuto = Math.abs(Number(latest.sabadell_linea) || 0); return BANK_PRODUCTS.map(p => { if (p.tipo === 'prestamo') return { ...p, limite: p.principal, dispuesto: p.principal, disponible: null, usoPct: null }; const manual = manualBankValue(p.id); const auto = p.id === 'sabadell_linea' ? sabadellAuto : 0; const dispuesto = Math.min(p.limite, manual !== null ? manual : auto); const disponible = Math.max(0, p.limite - dispuesto); return { ...p, dispuesto, disponible, usoPct: p.limite > 0 ? (dispuesto / p.limite) * 100 : 0, origenDato: manual !== null ? 'Manual' : p.origen }; }); }
-function getBankSummary() { const productos = getBankProductsComputed(); const lineas = productos.filter(p => p.tipo === 'linea'); return { productos, limiteLineas: lineas.reduce((s,p)=>s+(p.limite||0),0), dispuestoLineas: lineas.reduce((s,p)=>s+(p.dispuesto||0),0), disponibleLineas: lineas.reduce((s,p)=>s+(p.disponible||0),0), prestamoInicial: productos.filter(p=>p.tipo==='prestamo').reduce((s,p)=>s+(p.principal||0),0) }; }
+function clampBank(n, max) { n = Math.max(0, Number(n) || 0); return Math.min(max, n); }
+function manualBankDisponible(id) { const raw = localStorage.getItem('bp_disponible_' + id); if (raw === null || raw === '') return null; const n = Number(String(raw).replace(',', '.')); return Number.isFinite(n) ? Math.max(0, n) : null; }
+function setManualBankDisponible(id, value) { const product = BANK_PRODUCTS.find(p => p.id === id); const max = product?.limite || 0; const n = clampBank(String(value).replace(',', '.'), max); localStorage.setItem('bp_disponible_' + id, String(n)); renderProductos(); renderTes(); }
+function clearManualBankDisponible(id) { localStorage.removeItem('bp_disponible_' + id); renderProductos(); renderTes(); }
+function getBankProductsComputed() {
+  const latest = latestTesRecord();
+  const autoDisponible = {
+    sabadell_linea: Math.abs(Number(latest.sabadell_linea) || 0),
+    bbva_linea: Math.abs(Number(latest.bbva) || 0),
+  };
+  return BANK_PRODUCTS.map(p => {
+    if (p.tipo === 'prestamo') return { ...p, limite: p.principal, dispuesto: p.principal, disponible: null, usoPct: null };
+    const manual = manualBankDisponible(p.id);
+    const auto = autoDisponible[p.id] || 0;
+    const disponible = clampBank(manual !== null ? manual : auto, p.limite);
+    const dispuesto = Math.max(0, p.limite - disponible);
+    return { ...p, disponible, dispuesto, usoPct: p.limite > 0 ? (dispuesto / p.limite) * 100 : 0, origenDato: manual !== null ? 'Manual: disponible introducido' : p.origen };
+  });
+}
+function getBankSummary() { const productos = getBankProductsComputed(); const lineas = productos.filter(p => p.tipo === 'linea'); return { productos, limiteLineas: lineas.reduce((sum,p)=>sum+(p.limite||0),0), dispuestoLineas: lineas.reduce((sum,p)=>sum+(p.dispuesto||0),0), disponibleLineas: lineas.reduce((sum,p)=>sum+(p.disponible||0),0), prestamoInicial: productos.filter(p=>p.tipo==='prestamo').reduce((sum,p)=>sum+(p.principal||0),0) }; }
 const charts = {};
 
 function mkChart(id, type, labels, datasets, extra = {}) {
@@ -1031,7 +1047,7 @@ function renderProductos() {
   tbody.innerHTML = s.productos.map(p => {
     if (p.tipo === 'prestamo') return `<tr><td style="font-weight:500">${p.banco}</td><td>${p.producto}</td><td class="tr" style="font-weight:600">${eur(p.principal)}</td><td class="tr">—</td><td class="tr">—</td><td><span class="pill pz">Principal inicial</span></td><td style="font-size:12px;color:var(--text3)">${p.origen}</td></tr>`;
     const pct = Math.max(0, Math.min(100, p.usoPct || 0));
-    return `<tr><td style="font-weight:500">${p.banco}</td><td>${p.producto}</td><td class="tr" style="font-weight:600">${eur(p.limite)}</td><td class="tr"><input value="${p.dispuesto || 0}" onchange="setManualBankValue('${p.id}', this.value)" style="width:90px;text-align:right;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"> €</td><td class="tr" style="font-weight:600;color:var(--green)">${eur(p.disponible)}</td><td><div style="width:120px;background:var(--bg2);border-radius:999px;overflow:hidden;height:8px;margin-bottom:4px"><div style="width:${pct}%;height:8px;background:${pct>80?'#D4502A':pct>50?'#B87318':'#1A9E72'}"></div></div><span style="font-size:11px;color:var(--text3)">${pct.toFixed(1)}% usado</span></td><td style="font-size:12px;color:var(--text3)">${p.origenDato || p.origen}</td></tr>`;
+    return `<tr><td style="font-weight:500">${p.banco}</td><td>${p.producto}</td><td class="tr" style="font-weight:600">${eur(p.limite)}</td><td class="tr"><input value="${p.disponible || 0}" onchange="setManualBankDisponible('${p.id}', this.value)" title="Disponible, no dispuesto" style="width:90px;text-align:right;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"> €</td><td class="tr" style="font-weight:600;color:var(--red)">${eur(p.dispuesto)}</td><td><div style="width:120px;background:var(--bg2);border-radius:999px;overflow:hidden;height:8px;margin-bottom:4px"><div style="width:${pct}%;height:8px;background:${pct>80?'#D4502A':pct>50?'#B87318':'#1A9E72'}"></div></div><span style="font-size:11px;color:var(--text3)">${pct.toFixed(1)}% usado</span></td><td style="font-size:12px;color:var(--text3)">${p.origenDato || p.origen}${p.origenDato && p.origenDato.startsWith('Manual') ? ` <button onclick="clearManualBankDisponible('${p.id}')" style="border:0;background:transparent;color:var(--accent);cursor:pointer;font-size:11px">usar Excel</button>` : ''}</td></tr>`;
   }).join('');
 }
 

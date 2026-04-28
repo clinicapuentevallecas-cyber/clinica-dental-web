@@ -380,15 +380,11 @@ function parseCSVFromRow(text, headerRow = 0) {
 }
 
 async function fetchText(url) {
-  // Try corsproxy.io first, fallback to allorigins
-  try {
-    const res = await fetch('https://corsproxy.io/?' + encodeURIComponent(url));
-    if (res.ok) return res.text();
-  } catch(e) {}
-  // Fallback
-  const res2 = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url));
-  if (!res2.ok) throw new Error('HTTP ' + res2.status + ' al descargar datos');
-  return res2.text();
+  // Use Vercel edge rewrite proxy (see /api/proxy route)
+  const proxyUrl = '/api/proxy?url=' + encodeURIComponent(url);
+  const res = await fetch(proxyUrl);
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' al descargar. Verifica que las hojas están publicadas en Google Sheets.');
+  return res.text();
 }
 
 // ============================================================

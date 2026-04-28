@@ -380,11 +380,15 @@ function parseCSVFromRow(text, headerRow = 0) {
 }
 
 async function fetchText(url) {
-  // Use CORS proxy for Google Sheets
-  const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-  const res = await fetch(proxy);
-  if (!res.ok) throw new Error('HTTP ' + res.status + ' al descargar datos');
-  return res.text();
+  // Try corsproxy.io first, fallback to allorigins
+  try {
+    const res = await fetch('https://corsproxy.io/?' + encodeURIComponent(url));
+    if (res.ok) return res.text();
+  } catch(e) {}
+  // Fallback
+  const res2 = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url));
+  if (!res2.ok) throw new Error('HTTP ' + res2.status + ' al descargar datos');
+  return res2.text();
 }
 
 // ============================================================
@@ -446,6 +450,7 @@ async function fetchCajas(gid, anio, mes) {
     
     records.push({
       fecha,
+      empresa: 'Corporacion',
       efectivo: get(iEf),
       tarjeta_caixa: get(iCaixa),
       tarjeta_kutxa: get(iKutxa),

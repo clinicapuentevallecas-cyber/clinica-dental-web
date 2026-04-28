@@ -339,7 +339,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-28-9 cargado: liquidez potencial = caja operativa + disponible en lineas");
+console.log("INDEX FINANCIERO v2026-04-28-10 cargado: traspaso excluido de tesoreria operativa");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -622,7 +622,7 @@ async function fetchTesoreriaCuentas(gid, anio, mes) {
     total_tesoreria: totalTesoreria,
     traspaso
   };
-  return Math.abs(row.total_tesoreria || row.total_caja || row.efectivo || row.ff_aprobada || row.traspaso) > 0.0001 ? [row] : [];
+  return Math.abs(row.total_tesoreria || row.total_caja || row.efectivo || row.ff_aprobada) > 0.0001 ? [row] : [];
 }
 
 // FINANCIACIONES — cabecera en fila 1 (índice 0)
@@ -1002,7 +1002,7 @@ function renderTes() {
   const totalCaja = Number(t.total_caja) || 0;
   const efectivo = Number(t.efectivo) || 0;
   const ff = Number(t.ff_aprobada) || 0;
-  const traspaso = Number(t.traspaso) || 0;
+  // Traspaso: movimiento interno hacia/desde linea de credito. No afecta a tesoreria operativa.
   const bankSummary = getBankSummary();
 
   set('t-tot', eur(totalTes)); set('t-dias', 'Total cuadro B40:N42');
@@ -1023,7 +1023,6 @@ function renderTes() {
     ['BBVA', Number(t.bbva)||0, 'H/G41 según mes'],
     ['Transferencia', Number(t.transferencia)||0, 'H/I41 según mes'],
     ['Sabadell línea', Number(t.sabadell_linea)||0, 'L/M41 según mes'],
-    ['Traspaso', traspaso, 'fila 42'],
   ].filter(x => Math.abs(x[1]) > 0.0001);
 
   mkChart('c-caja', 'bar', cuentas.map(x => x[0]), [{ data: cuentas.map(x => x[1]), backgroundColor: '#1B5FA8', borderRadius: 5 }]);

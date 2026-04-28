@@ -55,7 +55,14 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 .pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
 .pg{background:var(--green-light);color:#085041}.pa{background:var(--amber-light);color:#633806}
 .pr{background:var(--red-light);color:#7A1F1F}.pb{background:var(--accent-light);color:#0C3E78}.pz{background:var(--bg2);color:var(--text3)}
-.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:'DM Sans',sans-serif;transition:all 0.15s}
+.empresa-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
+.eb{padding:6px 14px;border-radius:20px;border:1px solid var(--border2);background:var(--card);font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text2)}
+.eb:hover{border-color:var(--accent);color:var(--accent)}
+.eb.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.filter-bar select,.filter-bar input{padding:6px 10px;border:1px solid var(--border2);border-radius:7px;font-size:12px;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;outline:none}
+.filter-bar select:focus,.filter-bar input:focus{border-color:var(--accent)}
+.filter-tag{font-size:11px;color:var(--text3);align-self:center;margin-left:auto}
 .bp{background:var(--accent);color:#fff}.bp:hover{background:#0C3E78}
 .bg2btn{background:transparent;color:var(--text2);border:1px solid var(--border2)}.bg2btn:hover{background:var(--bg2)}
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100;align-items:center;justify-content:center}
@@ -128,7 +135,10 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 
 <!-- RESUMEN -->
 <div class="page active" id="page-resumen">
-  <div class="ph"><div class="pt">Resumen 2026</div><div class="ps" id="r-sync-info">Pulsa "Sincronizar" para cargar datos de Google Sheets</div></div>
+  <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+    <div><div class="pt">Resumen 2026</div><div class="ps" id="r-sync-info">Pulsa "Sincronizar" para cargar datos de Google Sheets</div></div>
+    <div id="empresa-bar-r" class="empresa-bar" style="margin-bottom:0"></div>
+  </div>
   <div class="metrics">
     <div class="metric"><div class="ml">Facturación acumulada</div><div class="mv" id="r-fac">—</div><div class="ms" id="r-fac-s"></div></div>
     <div class="metric"><div class="ml">Resultado acumulado</div><div class="mv" id="r-res">—</div><div class="ms" id="r-res-s"></div></div>
@@ -144,9 +154,12 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 
 <!-- TESORERÍA -->
 <div class="page" id="page-tesoreria">
-  <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start">
+  <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
     <div><div class="pt">Tesorería — Cajas diarias</div><div class="ps">Registro diario de cobros</div></div>
-    <select class="sel" id="mes-sel" onchange="renderTes()"></select>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div id="empresa-bar-t" class="empresa-bar" style="margin-bottom:0"></div>
+      <select class="sel" id="mes-sel" onchange="renderTes()"></select>
+    </div>
   </div>
   <div class="metrics">
     <div class="metric"><div class="ml">Total del mes</div><div class="mv" id="t-tot">—</div><div class="ms" id="t-dias"></div></div>
@@ -160,7 +173,10 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 
 <!-- GASTOS -->
 <div class="page" id="page-gastos">
-  <div class="ph"><div class="pt">Gastos generales</div><div class="ps">Leído desde Google Sheets · GastosGenerales</div></div>
+  <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+    <div><div class="pt">Gastos generales</div><div class="ps">Leído desde Google Sheets · GastosGenerales</div></div>
+    <div id="empresa-bar-g" class="empresa-bar" style="margin-bottom:0"></div>
+  </div>
   <div class="metrics m3">
     <div class="metric"><div class="ml">Total gastos</div><div class="mv" id="g-tot">—</div><div class="ms" id="g-cnt"></div></div>
     <div class="metric"><div class="ml">Mayor categoría</div><div class="mv" id="g-cat">—</div><div class="ms" id="g-cat-v"></div></div>
@@ -171,20 +187,29 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div class="card"><div class="ct">Por mes</div><div style="height:230px;position:relative"><canvas id="c-g-mes"></canvas></div></div>
   </div>
   <div class="card">
-    <div class="ch">
-      <div class="ct" style="margin:0">Transacciones</div>
-      <div style="display:flex;gap:8px">
-        <input id="g-q" placeholder="Buscar..." oninput="filterG()" style="padding:6px 10px;border:1px solid var(--border2);border-radius:7px;font-size:12px;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;outline:none">
-        <select class="sel" id="g-cf" onchange="filterG()" style="font-size:12px;padding:6px 10px"></select>
-      </div>
+    <div class="filter-bar">
+      <input id="g-q" placeholder="🔍 Buscar concepto, proveedor..." oninput="filterG()" style="flex:1;min-width:160px">
+      <select id="g-mes-f" onchange="filterG()"><option value="">Todos los meses</option></select>
+      <select id="g-emp-f" onchange="filterG()"><option value="">Todas las empresas</option></select>
+      <select id="g-cf" onchange="filterG()"><option value="">Todas las categorías</option></select>
+      <select id="g-fp-f" onchange="filterG()"><option value="">Todas las formas de pago</option></select>
+      <span class="filter-tag" id="g-count-tag"></span>
     </div>
-    <div class="tw"><table><thead><tr><th>Fecha</th><th>Empresa</th><th>Concepto</th><th>Proveedor</th><th>Categoría</th><th>Forma pago</th><th class="tr">Importe</th></tr></thead><tbody id="tb-g"></tbody></table></div>
+    <div class="tw"><table>
+      <thead><tr>
+        <th>Fecha</th><th>Empresa</th><th>Concepto</th><th>Proveedor</th><th>Categoría</th><th>Forma pago</th><th class="tr">Importe</th>
+      </tr></thead>
+      <tbody id="tb-g"></tbody>
+    </table></div>
   </div>
 </div>
 
 <!-- PREVISIÓN -->
 <div class="page" id="page-prevision">
-  <div class="ph"><div class="pt">Previsión de tesorería</div><div class="ps">Balance ingresos vs gastos por mes</div></div>
+  <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+    <div><div class="pt">Previsión de tesorería</div><div class="ps">Balance ingresos vs gastos por mes</div></div>
+    <div id="empresa-bar-p" class="empresa-bar" style="margin-bottom:0"></div>
+  </div>
   <div class="metrics">
     <div class="metric"><div class="ml">Balance Enero</div><div class="mv" id="p-1">—</div><div class="ms" id="p-1s"></div></div>
     <div class="metric"><div class="ml">Balance Febrero</div><div class="mv" id="p-2">—</div><div class="ms" id="p-2s"></div></div>
@@ -355,7 +380,9 @@ function parseCSVFromRow(text, headerRow = 0) {
 }
 
 async function fetchText(url) {
-  const res = await fetch(url);
+  // Use CORS proxy for Google Sheets
+  const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+  const res = await fetch(proxy);
   if (!res.ok) throw new Error('HTTP ' + res.status + ' al descargar datos');
   return res.text();
 }
@@ -660,38 +687,69 @@ async function loadDB() {
 // ============================================================
 // RENDER
 // ============================================================
+// ============================================================
+// EMPRESA GLOBAL STATE
+// ============================================================
+const EMPRESAS = ['Global','Corporacion','Bridge','Vallecas Las'];
+let empresaActual = 'Global';
+
+function setEmpresa(emp) {
+  empresaActual = emp;
+  renderEmpresaBars();
+  renderAll();
+}
+
+function renderEmpresaBars() {
+  ['empresa-bar-r','empresa-bar-t','empresa-bar-g','empresa-bar-p'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = EMPRESAS.map(e =>
+      `<button class="eb ${empresaActual===e?'active':''}" onclick="setEmpresa('${e}')">${e}</button>`
+    ).join('');
+  });
+}
+
+function filtrarEmp(arr, campo='empresa') {
+  if (empresaActual === 'Global') return arr;
+  return arr.filter(r => (r[campo]||'').toLowerCase().includes(empresaActual.toLowerCase()));
+}
+
 function renderAll() {
+  renderEmpresaBars();
   renderResumen(); renderTes(); renderGastos(); renderPrev();
   renderFins(); renderDevs(); renderEquipo(); renderObjs();
 }
 
 function renderResumen() {
-  const fac = D.cajas.reduce((s, c) => s + (c.total || 0), 0);
-  const gst = D.gastos.reduce((s, g) => s + (g.importe || 0), 0);
-  const fin = D.fins.reduce((s, f) => s + (f.financiado || 0), 0);
+  const cajas = filtrarEmp(D.cajas, 'empresa');
+  const gastos = filtrarEmp(D.gastos, 'empresa');
+  const fins = filtrarEmp(D.fins, 'empresa');
+  const fac = cajas.reduce((s, c) => s + (c.total || 0), 0);
+  const gst = gastos.reduce((s, g) => s + (g.importe || 0), 0);
+  const fin = fins.reduce((s, f) => s + (f.financiado || 0), 0);
   const dp = D.devs.filter(d => d.estado === 'PENDIENTE').length;
   const res = fac - gst;
-  set('r-fac', eur(fac)); set('r-fac-s', D.cajas.length + ' días con datos');
+  set('r-fac', eur(fac)); set('r-fac-s', cajas.length + ' días con datos');
   set('r-res', eur(res)); setC('r-res', 'mv ' + (res >= 0 ? 'up' : 'dn'));
   set('r-res-s', res >= 0 ? '▲ En positivo' : '▼ En negativo');
-  set('r-fin', eur(fin)); set('r-fin-s', D.fins.length + ' operaciones');
+  set('r-fin', eur(fin)); set('r-fin-s', fins.length + ' operaciones');
   set('r-dev', dp); setC('r-dev', 'mv ' + (dp > 0 ? 'dn' : 'up'));
   set('r-dev-s', dp > 0 ? 'Requieren atención' : 'Todo resuelto');
 
-  const pm = {}; D.cajas.forEach(c => { const m = c.fecha.slice(5, 7); pm[m] = (pm[m] || 0) + (c.total || 0); });
+  const pm = {}; cajas.forEach(c => { const m = c.fecha.slice(5, 7); pm[m] = (pm[m] || 0) + (c.total || 0); });
   const mk = Object.keys(pm).sort();
   mkChart('c-fac', 'bar', mk.map(m => MS[+m-1]), [{ data: mk.map(m => pm[m]), backgroundColor: '#1B5FA8', borderRadius: 5, barPercentage: 0.7 }]);
 
-  const ef = D.cajas.reduce((s, c) => s + (c.efectivo || 0), 0);
-  const tar = D.cajas.reduce((s, c) => s + (c.tarjeta_caixa || 0) + (c.tarjeta_kutxa || 0) + (c.tarjeta_sabadell || 0) + (c.tarjeta_cajamar || 0) + (c.tarjeta_bbva || 0), 0);
-  const tr = D.cajas.reduce((s, c) => s + (c.transferencia || 0), 0);
+  const ef = cajas.reduce((s, c) => s + (c.efectivo || 0), 0);
+  const tar = cajas.reduce((s, c) => s + (c.tarjeta_caixa || 0) + (c.tarjeta_kutxa || 0) + (c.tarjeta_sabadell || 0) + (c.tarjeta_cajamar || 0) + (c.tarjeta_bbva || 0), 0);
+  const tr = cajas.reduce((s, c) => s + (c.transferencia || 0), 0);
   mkChart('c-cobros', 'doughnut', ['Financiado','Tarjeta','Efectivo','Transferencia'],
     [{ data: [fin, tar, ef, tr], backgroundColor: ['#1B5FA8','#1A9E72','#B87318','#5B52B8'], borderWidth: 0, hoverOffset: 4 }],
     { cutout: '65%' });
   set('cobros-leg', ['Financiado','Tarjeta','Efectivo','Transferencia'].map((l,i) =>
     `<span><span class="lsq" style="background:${['#1B5FA8','#1A9E72','#B87318','#5B52B8'][i]}"></span>${l}</span>`).join(''));
 
-  const gm = {}; D.gastos.forEach(g => { if (g.fecha) { const m = String(g.fecha).slice(5, 7); gm[m] = (gm[m] || 0) + (g.importe || 0); } });
+  const gm = {}; gastos.forEach(g => { if (g.fecha) { const m = String(g.fecha).slice(5, 7); gm[m] = (gm[m] || 0) + (g.importe || 0); } });
   const rm = [...new Set([...Object.keys(pm), ...Object.keys(gm)])].sort();
   mkChart('c-res', 'bar', rm.map(m => MS[+m-1]),
     [{ data: rm.map(m => (pm[m]||0) - (gm[m]||0)), backgroundColor: rm.map(m => (pm[m]||0)-(gm[m]||0) >= 0 ? '#1A9E72' : '#D4502A'), borderRadius: 5 }]);
@@ -727,26 +785,53 @@ function renderTes() {
 }
 
 function renderGastos() {
-  const tot = D.gastos.reduce((s, g) => s + (g.importe || 0), 0);
-  set('g-tot', eur(tot)); set('g-cnt', D.gastos.length + ' transacciones');
-  const pc = {}; D.gastos.forEach(g => { if (g.fuente_gasto && g.importe) pc[g.fuente_gasto] = (pc[g.fuente_gasto] || 0) + g.importe; });
+  const gastos = filtrarEmp(D.gastos, 'empresa');
+  const tot = gastos.reduce((s, g) => s + (g.importe || 0), 0);
+  set('g-tot', eur(tot)); set('g-cnt', gastos.length + ' transacciones');
+  const pc = {}; gastos.forEach(g => { if (g.fuente_gasto && g.importe) pc[g.fuente_gasto] = (pc[g.fuente_gasto] || 0) + g.importe; });
   const cats = Object.entries(pc).sort((a,b) => b[1]-a[1]);
   set('g-cat', cats[0]?.[0] || '—'); set('g-cat-v', cats[0] ? eur(cats[0][1]) : '');
-  set('g-prov', new Set(D.gastos.map(g => g.proveedor).filter(Boolean)).size);
+  set('g-prov', new Set(gastos.map(g => g.proveedor).filter(Boolean)).size);
   mkChart('c-g-cat', 'doughnut', cats.slice(0,7).map(c => c[0]),
     [{ data: cats.slice(0,7).map(c => c[1]), backgroundColor: COLORS, borderWidth: 0, hoverOffset: 4 }], { cutout: '60%' });
-  const gm = {}; D.gastos.forEach(g => { if (g.fecha) { const m = String(g.fecha).slice(5,7); gm[m] = (gm[m]||0) + (g.importe||0); } });
+  const gm = {}; gastos.forEach(g => { if (g.fecha) { const m = String(g.fecha).slice(5,7); gm[m] = (gm[m]||0) + (g.importe||0); } });
   const gms = Object.keys(gm).sort();
   mkChart('c-g-mes', 'bar', gms.map(m => MS[+m-1]), [{ data: gms.map(m => gm[m]), backgroundColor: '#D4502A', borderRadius: 5 }]);
-  document.getElementById('g-cf').innerHTML = '<option value="">Todos</option>' + cats.map(c => `<option>${c[0]}</option>`).join('');
+
+  // Populate filter dropdowns
+  const meses = [...new Set(gastos.map(g => g.fecha ? String(g.fecha).slice(0,7) : '').filter(Boolean))].sort();
+  const emprs = [...new Set(gastos.map(g => g.empresa).filter(Boolean))].sort();
+  const formas = [...new Set(gastos.map(g => g.forma_pago).filter(Boolean))].sort();
+  const selM = document.getElementById('g-mes-f');
+  const curM = selM.value;
+  selM.innerHTML = '<option value="">Todos los meses</option>' + meses.map(m => `<option value="${m}" ${m===curM?'selected':''}>${M[+m.slice(5)-1]} ${m.slice(0,4)}</option>`).join('');
+  const selE = document.getElementById('g-emp-f');
+  const curE = selE.value;
+  selE.innerHTML = '<option value="">Todas las empresas</option>' + emprs.map(e => `<option value="${e}" ${e===curE?'selected':''}>${e}</option>`).join('');
+  document.getElementById('g-cf').innerHTML = '<option value="">Todas las categorías</option>' + cats.map(c => `<option>${c[0]}</option>`).join('');
+  const selFP = document.getElementById('g-fp-f');
+  const curFP = selFP.value;
+  selFP.innerHTML = '<option value="">Todas las formas de pago</option>' + formas.map(f => `<option value="${f}" ${f===curFP?'selected':''}>${f}</option>`).join('');
   filterG();
 }
 
 function filterG() {
-  const q = document.getElementById('g-q').value.toLowerCase();
+  const q = (document.getElementById('g-q').value || '').toLowerCase();
   const cf = document.getElementById('g-cf').value;
-  const rows = D.gastos.filter(g => (!q || [g.concepto,g.proveedor,g.fuente_gasto,g.empresa].some(f => f?.toLowerCase().includes(q))) && (!cf || g.fuente_gasto === cf));
-  document.getElementById('tb-g').innerHTML = rows.slice(0,300).map(g =>
+  const mesF = document.getElementById('g-mes-f').value;
+  const empF = document.getElementById('g-emp-f').value;
+  const fpF = document.getElementById('g-fp-f').value;
+  const base = filtrarEmp(D.gastos, 'empresa');
+  const rows = base.filter(g =>
+    (!q || [g.concepto,g.proveedor,g.fuente_gasto,g.empresa].some(f => f?.toLowerCase().includes(q))) &&
+    (!cf || g.fuente_gasto === cf) &&
+    (!mesF || (g.fecha && String(g.fecha).startsWith(mesF))) &&
+    (!empF || g.empresa === empF) &&
+    (!fpF || g.forma_pago === fpF)
+  );
+  const totFil = rows.reduce((s,g)=>s+(g.importe||0),0);
+  set('g-count-tag', rows.length + ' registros · ' + eur(totFil));
+  document.getElementById('tb-g').innerHTML = rows.slice(0,500).map(g =>
     `<tr><td style="font-size:12px;color:var(--text3)">${fdate(g.fecha)}</td><td style="font-size:12px;color:var(--text2)">${g.empresa||'—'}</td><td>${g.concepto||'—'}</td><td style="font-size:12px;color:var(--text2)">${g.proveedor||'—'}</td><td><span class="pill pb" style="font-size:10px">${g.fuente_gasto||'—'}</span></td><td style="font-size:12px;color:var(--text3)">${g.forma_pago||'—'}</td><td class="tr" style="font-weight:600">${eur(g.importe)}</td></tr>`
   ).join('');
 }

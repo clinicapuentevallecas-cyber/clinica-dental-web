@@ -372,7 +372,7 @@ async function fetchGastos() {
     .filter(r => r['Empresa'] && r['Fecha'] && r['Importe'])
     .map(r => ({
       empresa: r['Empresa'],
-      fecha: r['Fecha'],
+      fecha: fixDate(r['Fecha']),
       fuente_gasto: r['Fuente de gasto'] || '',
       factura: r['Factura'] || '',
       concepto: r['Concepto'] || '',
@@ -418,7 +418,7 @@ async function fetchCajas(gid, anio, mes) {
     const fecha = new Date(anio, mes - 1, dia).toISOString().split('T')[0];
     
     records.push({
-      fecha, anio, mes, dia,
+      fecha,
       efectivo: get(iEf),
       tarjeta_caixa: get(iCaixa),
       tarjeta_kutxa: get(iKutxa),
@@ -444,7 +444,7 @@ async function fetchFins() {
     .filter(r => r['FF'] && r['FECHA'])
     .map(r => ({
       ff: r['FF'],
-      fecha: r['FECHA'],
+      fecha: fixDate(r['FECHA']),
       n_peticion: r['N.PETICION'] || '',
       canal: r['CANAL'] || '',
       financiado: parseNum(r['FINANCIADO']),
@@ -459,7 +459,17 @@ async function fetchFins() {
     }));
 }
 
-// Número desde string español (1.234,56 o 1234.56)
+// Convierte fecha DD/MM/YYYY o DD-MM-YYYY a YYYY-MM-DD
+function fixDate(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  // DD/MM/YYYY
+  const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m1) return `${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}`;
+  // YYYY-MM-DD already correct
+  if (s.match(/^\d{4}-\d{2}-\d{2}/)) return s.slice(0,10);
+  return s;
+}
 function parseNum(v) {
   if (!v || v === '') return 0;
   const s = String(v).trim().replace(/€/g,'').replace(/\s/g,'');

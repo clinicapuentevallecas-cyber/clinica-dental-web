@@ -612,13 +612,13 @@ async function syncSheets() {
     log.push(`Cajas: ${cajasAll.length} registros`);
     
     if (cajasAll.length) {
-      // Delete first, wait, then insert
       await sb.from('cajas_diarias').delete().gte('fecha', '2026-01-01');
-      // Insert in batches of 50 to avoid timeout
+      // Small delay to ensure delete completes
+      await new Promise(r => setTimeout(r, 500));
       for (let i = 0; i < cajasAll.length; i += 50) {
         const batch = cajasAll.slice(i, i + 50);
-        const { error: eC } = await sb.from('cajas_diarias').insert(batch);
-        if (eC) { log.push('ERROR cajas batch ' + i + ': ' + eC.message); break; }
+        const { error: eC } = await sb.from('cajas_diarias').upsert(batch, { onConflict: 'fecha' });
+        if (eC) { log.push('ERROR cajas batch ' + i + ': ' + eC.message); }
       }
       D.cajas = cajasAll;
       log.push('✓ Cajas guardadas');

@@ -208,8 +208,9 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div><div class="pt">Gastos generales</div><div class="ps">Leído desde Google Sheets · GastosGenerales</div></div>
     <div id="empresa-bar-g" class="empresa-bar" style="margin-bottom:0"></div>
   </div>
-  <div class="metrics m3">
+  <div class="metrics">
     <div class="metric"><div class="ml">Total gastos</div><div class="mv" id="g-tot">—</div><div class="ms" id="g-cnt"></div></div>
+    <div class="metric"><div class="ml">Pendiente de pago</div><div class="mv dn" id="g-pend">—</div><div class="ms" id="g-pend-s"></div></div>
     <div class="metric"><div class="ml">Mayor categoría</div><div class="mv" id="g-cat">—</div><div class="ms" id="g-cat-v"></div></div>
     <div class="metric"><div class="ml">Proveedores únicos</div><div class="mv" id="g-prov">—</div><div class="ms">Activos</div></div>
   </div>
@@ -224,11 +225,12 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
       <select id="g-emp-f" onchange="filterG()"><option value="">Todas las empresas</option></select>
       <select id="g-cf" onchange="filterG()"><option value="">Todas las categorías</option></select>
       <select id="g-fp-f" onchange="filterG()"><option value="">Todas las formas de pago</option></select>
+      <select id="g-estado-f" onchange="filterG()"><option value="">Todos los estados</option></select>
       <span class="filter-tag" id="g-count-tag"></span>
     </div>
     <div class="tw"><table>
       <thead><tr>
-        <th>Fecha</th><th>Empresa</th><th>Concepto</th><th>Proveedor</th><th>Categoría</th><th>Forma pago</th><th class="tr">Importe</th>
+        <th>Fecha</th><th>Empresa</th><th>Concepto</th><th>Proveedor</th><th>Categoría</th><th>Forma pago</th><th>Estado</th><th>Pago estimado</th><th class="tr">Importe</th>
       </tr></thead>
       <tbody id="tb-g"></tbody>
     </table></div>
@@ -339,7 +341,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-28-10 cargado: traspaso excluido de tesoreria operativa");
+console.log("INDEX FINANCIERO v2026-04-28-11 cargado: gastos con estado pagado/pendiente y fecha estimada de pago");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1050,10 +1052,47 @@ function renderProductos() {
   }).join('');
 }
 
+
+function gastoKey(g) {
+  const raw = [g.fecha||'', g.empresa||'', g.concepto||'', g.proveedor||'', g.fuente_gasto||'', g.importe||0].join('|');
+  try { return btoa(unescape(encodeURIComponent(raw))).replace(/=+$/,''); }
+  catch(e) { return raw.replace(/[^a-zA-Z0-9]/g,'_').slice(0,90); }
+}
+function normEstadoGasto(v) { return normTxt(v || ''); }
+function gastoPendiente(g) {
+  const e = normEstadoGasto(g.estado);
+  return e.includes('pend') || e.includes('no pag') || e.includes('sin pagar') || e.includes('por pagar');
+}
+function gastoPagado(g) {
+  const e = normEstadoGasto(g.estado);
+  return e.includes('pagad') || e === 'ok' || e.includes('abonad');
+}
+function getGastoFechaPago(g) { return localStorage.getItem('gasto_pago_est_' + gastoKey(g)) || ''; }
+function setGastoFechaPago(key, value) {
+  if (value) localStorage.setItem('gasto_pago_est_' + key, value);
+  else localStorage.removeItem('gasto_pago_est_' + key);
+  renderGastos();
+  renderPrev();
+}
+function fechaFlujoGasto(g) {
+  return gastoPendiente(g) ? (getGastoFechaPago(g) || g.fecha) : g.fecha;
+}
+function estadoGastoBadge(g) {
+  const estado = (g.estado || '').trim() || 'Sin estado';
+  if (gastoPendiente(g)) return `<span class="pill pr" style="font-size:10px">${estado}</span>`;
+  if (gastoPagado(g)) return `<span class="pill pg" style="font-size:10px">${estado}</span>`;
+  return `<span class="pill pz" style="font-size:10px">${estado}</span>`;
+}
+
 function renderGastos() {
   const gastos = filtrarEmp(D.gastos, 'empresa');
   const tot = gastos.reduce((s, g) => s + (g.importe || 0), 0);
+  const pend = gastos.filter(gastoPendiente);
+  const pendTot = pend.reduce((s, g) => s + (g.importe || 0), 0);
+  const pendSinFecha = pend.filter(g => !getGastoFechaPago(g)).length;
   set('g-tot', eur(tot)); set('g-cnt', gastos.length + ' transacciones');
+  set('g-pend', eur(pendTot));
+  set('g-pend-s', pend.length + ' pendientes' + (pendSinFecha ? ' · ' + pendSinFecha + ' sin fecha estimada' : ''));
   const pc = {}; gastos.forEach(g => { if (g.fuente_gasto && g.importe) pc[g.fuente_gasto] = (pc[g.fuente_gasto] || 0) + g.importe; });
   const cats = Object.entries(pc).sort((a,b) => b[1]-a[1]);
   set('g-cat', cats[0]?.[0] || '—'); set('g-cat-v', cats[0] ? eur(cats[0][1]) : '');
@@ -1068,6 +1107,7 @@ function renderGastos() {
   const meses = [...new Set(gastos.map(g => g.fecha ? String(g.fecha).slice(0,7) : '').filter(Boolean))].sort();
   const emprs = [...new Set(gastos.map(g => g.empresa).filter(Boolean))].sort();
   const formas = [...new Set(gastos.map(g => g.forma_pago).filter(Boolean))].sort();
+  const estados = [...new Set(gastos.map(g => g.estado).filter(Boolean))].sort();
   const selM = document.getElementById('g-mes-f');
   const curM = selM.value;
   selM.innerHTML = '<option value="">Todos los meses</option>' + meses.map(m => `<option value="${m}" ${m===curM?'selected':''}>${M[+m.slice(5)-1]} ${m.slice(0,4)}</option>`).join('');
@@ -1078,6 +1118,9 @@ function renderGastos() {
   const selFP = document.getElementById('g-fp-f');
   const curFP = selFP.value;
   selFP.innerHTML = '<option value="">Todas las formas de pago</option>' + formas.map(f => `<option value="${f}" ${f===curFP?'selected':''}>${f}</option>`).join('');
+  const selEst = document.getElementById('g-estado-f');
+  const curEst = selEst.value;
+  selEst.innerHTML = '<option value="">Todos los estados</option>' + estados.map(e => `<option value="${e}" ${e===curEst?'selected':''}>${e}</option>`).join('') + '<option value="__pend_sin_fecha" '+(curEst==='__pend_sin_fecha'?'selected':'')+'>Pendientes sin fecha estimada</option>';
   filterG();
 }
 
@@ -1087,26 +1130,32 @@ function filterG() {
   const mesF = document.getElementById('g-mes-f').value;
   const empF = document.getElementById('g-emp-f').value;
   const fpF = document.getElementById('g-fp-f').value;
+  const estadoF = document.getElementById('g-estado-f').value;
   const base = filtrarEmp(D.gastos, 'empresa');
   const rows = base.filter(g =>
     (!q || [g.concepto,g.proveedor,g.fuente_gasto,g.empresa].some(f => f?.toLowerCase().includes(q))) &&
     (!cf || g.fuente_gasto === cf) &&
     (!mesF || (g.fecha && String(g.fecha).startsWith(mesF))) &&
     (!empF || g.empresa === empF) &&
-    (!fpF || g.forma_pago === fpF)
+    (!fpF || g.forma_pago === fpF) &&
+    (!estadoF || (estadoF === '__pend_sin_fecha' ? (gastoPendiente(g) && !getGastoFechaPago(g)) : g.estado === estadoF))
   );
   const totFil = rows.reduce((s,g)=>s+(g.importe||0),0);
   set('g-count-tag', rows.length + ' registros · ' + eur(totFil));
-  document.getElementById('tb-g').innerHTML = rows.slice(0,500).map(g =>
-    `<tr><td style="font-size:12px;color:var(--text3)">${fdate(g.fecha)}</td><td style="font-size:12px;color:var(--text2)">${g.empresa||'—'}</td><td>${g.concepto||'—'}</td><td style="font-size:12px;color:var(--text2)">${g.proveedor||'—'}</td><td><span class="pill pb" style="font-size:10px">${g.fuente_gasto||'—'}</span></td><td style="font-size:12px;color:var(--text3)">${g.forma_pago||'—'}</td><td class="tr" style="font-weight:600">${eur(g.importe)}</td></tr>`
-  ).join('');
+  document.getElementById('tb-g').innerHTML = rows.slice(0,500).map(g => {
+    const k = gastoKey(g);
+    const fechaEst = getGastoFechaPago(g);
+    const disabled = gastoPendiente(g) ? '' : 'disabled';
+    const title = gastoPendiente(g) ? 'Fecha estimada de pago para previsión de caja' : 'Solo editable cuando el gasto está pendiente';
+    return `<tr><td style="font-size:12px;color:var(--text3)">${fdate(g.fecha)}</td><td style="font-size:12px;color:var(--text2)">${g.empresa||'—'}</td><td>${g.concepto||'—'}</td><td style="font-size:12px;color:var(--text2)">${g.proveedor||'—'}</td><td><span class="pill pb" style="font-size:10px">${g.fuente_gasto||'—'}</span></td><td style="font-size:12px;color:var(--text3)">${g.forma_pago||'—'}</td><td>${estadoGastoBadge(g)}</td><td><input type="date" value="${fechaEst}" ${disabled} title="${title}" onchange="setGastoFechaPago('${k}', this.value)" style="width:135px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:${gastoPendiente(g)?'var(--bg)':'var(--bg2)'};color:var(--text);font-family:'DM Sans';font-size:12px"></td><td class="tr" style="font-weight:600">${eur(g.importe)}</td></tr>`;
+  }).join('');
 }
 
 function renderPrev() {
   const cajas = filtrarEmp(D.cajas, 'empresa');
   const gastos = filtrarEmp(D.gastos, 'empresa');
   const cm = {}; cajas.forEach(c => { const m = +c.fecha.slice(5,7); cm[m] = (cm[m]||0) + (c.total||0); });
-  const gm = {}; gastos.forEach(g => { if (g.fecha) { const m = +String(g.fecha).slice(5,7); gm[m] = (gm[m]||0) + (g.importe||0); } });
+  const gm = {}; gastos.forEach(g => { const fg = fechaFlujoGasto(g); if (fg) { const m = +String(fg).slice(5,7); gm[m] = (gm[m]||0) + (g.importe||0); } });
   let acc = 0;
   const rows = [1,2,3,4].map(m => {
     const fac = cm[m] || null, gst = gm[m] || 0, bal = fac != null ? fac - gst : null;

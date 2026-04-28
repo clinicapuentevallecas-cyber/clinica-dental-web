@@ -158,7 +158,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 <!-- TESORERÍA -->
 <div class="page" id="page-tesoreria">
   <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-    <div><div class="pt">Tesorería — Cajas diarias</div><div class="ps">Registro diario de cobros</div></div>
+    <div><div class="pt">Tesorería — Cuentas</div><div class="ps">Detecta automáticamente todas las pestañas de caja y lee B40:N42</div></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <div id="empresa-bar-t" class="empresa-bar" style="margin-bottom:0"></div>
       <select class="sel" id="mes-sel" onchange="renderTes()"></select>
@@ -170,8 +170,8 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div class="metric"><div class="ml">Efectivo</div><div class="mv" id="t-ef">—</div><div class="ms" id="t-ef-s"></div></div>
     <div class="metric"><div class="ml">Financiado</div><div class="mv" id="t-fi">—</div><div class="ms" id="t-fi-s"></div></div>
   </div>
-  <div class="card mb"><div class="ct">Caja diaria vs objetivo</div><div style="height:230px;position:relative"><canvas id="c-caja"></canvas></div></div>
-  <div class="card"><div class="ct">Detalle diario</div><div class="tw"><table><thead><tr><th>Día</th><th>Efectivo</th><th>Tarjeta</th><th>Transfer.</th><th>Financiado</th><th class="tr">Total</th><th>Estado</th></tr></thead><tbody id="tb-tes"></tbody></table></div></div>
+  <div class="card mb"><div class="ct">Distribución por cuenta</div><div style="height:230px;position:relative"><canvas id="c-caja"></canvas></div></div>
+  <div class="card"><div class="ct">Detalle de cuentas del mes</div><div class="tw"><table><thead><tr><th>Cuenta</th><th class="tr">Importe</th><th>Origen</th><th>Estado</th></tr></thead><tbody id="tb-tes"></tbody></table></div></div>
 </div>
 
 <!-- GASTOS -->
@@ -311,7 +311,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-28-3 cargado: financiaciones sin columna empresa");
+console.log("INDEX FINANCIERO v2026-04-28-6 cargado: deteccion automatica de hojas de caja y tesoreria B40:N42");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -329,6 +329,65 @@ const GID = {
   Fins:      '1690767513',
 };
 const csvUrl = gid => `${BASE}?gid=${gid}&single=true&output=csv`;
+const pubHtmlUrl = () => BASE.replace(/\/pub$/, '/pubhtml');
+const MONTH_NAMES = [
+  ['enero','ene'], ['febrero','feb'], ['marzo','mar'], ['abril','abr'], ['mayo','may'], ['junio','jun'],
+  ['julio','jul'], ['agosto','ago'], ['septiembre','set','sep'], ['octubre','oct'], ['noviembre','nov'], ['diciembre','dic']
+];
+const FALLBACK_CAJA_SHEETS = [
+  { name: 'Enero26', gid: GID.Enero26, year: 2026, month: 1 },
+  { name: 'Febrero26', gid: GID.Febrero26, year: 2026, month: 2 },
+  { name: 'Marzo26', gid: GID.Marzo26, year: 2026, month: 3 },
+  { name: 'Abril26', gid: GID.Abril26, year: 2026, month: 4 },
+].filter(s => s.gid);
+function normTxt(v) {
+  return String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+function sheetNameToCajaMeta(name, gid) {
+  const n = normTxt(name).replace(/[_-]+/g, ' ');
+  let month = 0;
+  for (let i = 0; i < MONTH_NAMES.length; i++) {
+    if (MONTH_NAMES[i].some(m => n.includes(m))) { month = i + 1; break; }
+  }
+  if (!month) return null;
+  const hasCajaWord = /\bcaja(s)?\b/.test(n) || /\bcobro(s)?\b/.test(n);
+  const looksLikeMonthSheet = /(^|\s)(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)\s*\d{2,4}($|\s)/.test(n);
+  const hasYear = /(20\d{2}|\b\d{2}\b)/.test(n);
+  // Acepta hojas tipo "Enero26" y también "Caja Enero 2026" / "Cajas Mayo26".
+  if (!hasCajaWord && !looksLikeMonthSheet) return null;
+  if (!hasYear && !hasCajaWord) return null;
+  const y4 = n.match(/20\d{2}/);
+  const y2 = n.match(/(?:^|\D)(\d{2})(?:\D|$)/);
+  const year = y4 ? Number(y4[0]) : (y2 ? 2000 + Number(y2[1]) : 2026);
+  return { name: String(name || '').trim(), gid: String(gid), year, month };
+}
+async function discoverCajaSheets() {
+  try {
+    const html = await fetchText(pubHtmlUrl());
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const found = [];
+    doc.querySelectorAll('a[href*="gid="]').forEach(a => {
+      const href = a.getAttribute('href') || '';
+      const m = href.match(/[?&]gid=(\d+)/);
+      if (!m) return;
+      const meta = sheetNameToCajaMeta(a.textContent || '', m[1]);
+      if (meta) found.push(meta);
+    });
+    const re = /gid=(\d+)[^>]*>([^<]{2,80})<\//g;
+    let m;
+    while ((m = re.exec(html))) {
+      const meta = sheetNameToCajaMeta(m[2], m[1]);
+      if (meta) found.push(meta);
+    }
+    const byKey = new Map();
+    found.forEach(x => byKey.set(`${x.gid}|${x.year}|${x.month}`, x));
+    const arr = Array.from(byKey.values()).sort((a,b) => (a.year - b.year) || (a.month - b.month));
+    return arr.length ? arr : FALLBACK_CAJA_SHEETS;
+  } catch (err) {
+    console.warn('[Caja sheets] No se pudieron detectar automáticamente las pestañas. Uso fallback manual.', err);
+    return FALLBACK_CAJA_SHEETS;
+  }
+}
 
 // ============================================================
 // CSV PARSER — handles quoted fields with commas
@@ -484,6 +543,60 @@ async function fetchCajas(gid, anio, mes) {
   return records;
 }
 
+// TESORERÍA — cuadro de cuentas B40:N42 de cada pestaña mensual
+async function fetchTesoreriaCuentas(gid, anio, mes) {
+  const text = await fetchText(csvUrl(gid));
+  const lines = parseCSVLines(text);
+  const header = parseCSVRow(lines[39] || ''); // fila 40
+  const values = parseCSVRow(lines[40] || ''); // fila 41
+  const transfer = parseCSVRow(lines[41] || ''); // fila 42
+  const norm = v => String(v || '').trim().toUpperCase();
+  const findVal = (needle, opts = {}) => {
+    const matches = [];
+    for (let i = 1; i <= 13; i++) {
+      const h = norm(header[i]);
+      if (!h) continue;
+      if (h.includes(needle)) matches.push({ i, h, v: parseNum(values[i]) });
+    }
+    if (!matches.length) return 0;
+    if (opts.last) return matches[matches.length - 1].v || 0;
+    if (opts.notLinea) {
+      const m = matches.find(x => !x.h.includes('LINEA'));
+      return m ? (m.v || 0) : 0;
+    }
+    return matches[0].v || 0;
+  };
+  let traspaso = 0;
+  for (let i = 1; i <= 13; i++) {
+    if (norm(transfer[i]).includes('TRASPASO')) {
+      traspaso = parseNum(transfer[i + 1]);
+      break;
+    }
+  }
+  const yyyyMm = `${anio}-${String(mes).padStart(2,'0')}`;
+  const lastDay = new Date(anio, mes, 0).getDate();
+  const totalCaja = findVal('TTL');
+  const totalTesoreria = findVal('TTL', { last: true }) || totalCaja;
+  const row = {
+    mes: yyyyMm,
+    fecha: `${yyyyMm}-${String(lastDay).padStart(2,'0')}`,
+    empresa: 'Corporacion',
+    efectivo: findVal('EFECTIVO'),
+    ff_aprobada: findVal('FF'),
+    caixa: findVal('CAIXA'),
+    sabadell: findVal('SABADELL', { notLinea: true }),
+    kutxa: findVal('KUTXA'),
+    cajamar: findVal('CAJAMAR'),
+    bbva: findVal('BBVA'),
+    transferencia: findVal('TRANSFERENCIA'),
+    total_caja: totalCaja,
+    sabadell_linea: findVal('SABADELL LINEA'),
+    total_tesoreria: totalTesoreria,
+    traspaso
+  };
+  return Math.abs(row.total_tesoreria || row.total_caja || row.efectivo || row.ff_aprobada || row.traspaso) > 0.0001 ? [row] : [];
+}
+
 // FINANCIACIONES — cabecera en fila 1 (índice 0)
 async function fetchFins() {
   const text = await fetchText(csvUrl(GID.Fins));
@@ -609,7 +722,7 @@ function setC(id, c) { const e = document.getElementById(id); if (e) e.className
 // ============================================================
 // DATA STORE
 // ============================================================
-let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [] };
+let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [] };
 
 // ============================================================
 // SYNC FROM GOOGLE SHEETS
@@ -622,14 +735,19 @@ async function syncSheets() {
   
   const log = [];
   try {
+    log.push('Detectando pestañas de caja...');
+    const cajaSheets = await discoverCajaSheets();
+    log.push('Pestañas de caja detectadas: ' + cajaSheets.map(s => `${s.name}(${s.gid})`).join(', '));
+
     log.push('Descargando cajas...');
-    const cajasAll = (await Promise.all([
-      fetchCajas(GID.Enero26, 2026, 1),
-      fetchCajas(GID.Febrero26, 2026, 2),
-      fetchCajas(GID.Marzo26, 2026, 3),
-      fetchCajas(GID.Abril26, 2026, 4),
-    ])).flat();
+    const cajasAll = (await Promise.all(
+      cajaSheets.map(s => fetchCajas(s.gid, s.year, s.month))
+    )).flat();
+    const tesoreriaCuentas = (await Promise.all(
+      cajaSheets.map(s => fetchTesoreriaCuentas(s.gid, s.year, s.month))
+    )).flat();
     log.push(`Cajas: ${cajasAll.length} registros válidos`);
+    log.push(`Tesorería cuentas: ${tesoreriaCuentas.length} meses`);
     
     const cajaMap = new Map();
     cajasAll.forEach(c => cajaMap.set(`${c.empresa || 'Corporacion'}|${c.fecha}`, c));
@@ -669,11 +787,18 @@ async function syncSheets() {
     }
     log.push('✓ Financiaciones guardadas');
 
+    const tesMap = new Map();
+    tesoreriaCuentas.forEach(t => tesMap.set(`${t.empresa || 'Corporacion'}|${t.mes}`, t));
+    const tesUniq = Array.from(tesMap.values()).sort((a,b) => String(a.mes).localeCompare(String(b.mes)));
+    D.tes = tesUniq;
+    localStorage.setItem('cd_tesoreria_cuentas', JSON.stringify(tesUniq));
+    log.push(`✓ Tesorería B40:N42 guardada en navegador: ${tesUniq.length} meses`);
+
     const now = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
     localStorage.setItem('cd_last_sync', now);
     await loadDB(); // renderiza exactamente lo que queda guardado en Supabase, igual que tras refrescar.
     set('lsync', 'Última sync: ' + now);
-    set('r-sync-info', 'Sincronizado a las ' + now + ' · ' + cajasUniq.length + ' días válidos, ' + gastos.length + ' gastos, ' + fins.length + ' financiaciones');
+    set('r-sync-info', 'Sincronizado a las ' + now + ' · ' + cajaSheets.length + ' pestañas de caja, ' + cajasUniq.length + ' días válidos, ' + tesUniq.length + ' meses de tesorería, ' + gastos.length + ' gastos, ' + fins.length + ' financiaciones');
     log.push('✅ Sync completada');
   } catch (e) {
     log.push('❌ ERROR: ' + e.message);
@@ -699,6 +824,7 @@ async function loadDB() {
     sb.from('trabajadores').select('*').order('nombre'),
   ]);
   D.cajas = (c.data || []).filter(esCajaReal); D.gastos = g.data || []; D.fins = f.data || [];
+  try { D.tes = JSON.parse(localStorage.getItem('cd_tesoreria_cuentas') || '[]'); } catch (_) { D.tes = []; }
   D.devs = dv.data || []; D.workers = w.data || [];
   const ls = localStorage.getItem('cd_last_sync');
   if (ls) set('lsync', 'Última sync: ' + ls);
@@ -790,47 +916,56 @@ function renderResumen() {
 
 function renderTes() {
   const sel = document.getElementById('mes-sel');
-  const cajasBase = filtrarEmp(D.cajas, 'empresa').filter(esCajaReal).sort((a,b) => String(a.fecha).localeCompare(String(b.fecha)));
-  const meses = [...new Set(cajasBase.map(c => String(c.fecha).slice(0, 7)))].sort();
+  const tesBase = (D.tes || []).filter(r => empresaActual === 'Global' || (r.empresa || '').toLowerCase().includes(empresaActual.toLowerCase())).sort((a,b) => String(a.mes).localeCompare(String(b.mes)));
+  const meses = tesBase.map(r => r.mes);
   const prevMes = sel.value;
   sel.innerHTML = '';
-  meses.forEach(m => {
-    const totalMes = cajasBase.filter(c => String(c.fecha).startsWith(m)).reduce((s,c)=>s+(Number(c.total)||0),0);
+  tesBase.forEach(r => {
     const o = document.createElement('option');
-    o.value = m;
-    o.textContent = `${M[+m.slice(5)-1]} ${m.slice(0,4)} · ${eur(totalMes)}`;
+    o.value = r.mes;
+    o.textContent = `${M[+r.mes.slice(5)-1]} ${r.mes.slice(0,4)} · ${eur(Number(r.total_tesoreria)||0)}`;
     sel.appendChild(o);
   });
 
-  // Mejor por defecto: el último mes con movimientos reales. Evita que se quede seleccionado un mes vacío antiguo.
   const mes = meses.includes(prevMes) ? prevMes : (meses[meses.length - 1] || '');
   if (!mes) {
-    set('t-tot', eur(0)); set('t-dias', 'Sin datos'); set('t-obj', '—'); set('t-obj-s', ''); set('t-ef', eur(0)); set('t-ef-s', ''); set('t-fi', eur(0)); set('t-fi-s', '');
-    document.getElementById('tb-tes').innerHTML = '<tr><td colspan="7" style="color:var(--text3);text-align:center;padding:24px">No hay movimientos de caja guardados para la empresa seleccionada.</td></tr>';
-    mkChart('c-caja', 'line', [], [{ data: [] }]);
+    set('t-tot', eur(0)); set('t-dias', 'Sin datos de B40:N42'); set('t-obj', '—'); set('t-obj-s', ''); set('t-ef', eur(0)); set('t-ef-s', ''); set('t-fi', eur(0)); set('t-fi-s', '');
+    document.getElementById('tb-tes').innerHTML = '<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:24px">Sin datos de tesorería. Pulsa Sincronizar para leer los cuadros B40:N42.</td></tr>';
+    mkChart('c-caja', 'bar', [], [{ data: [] }]);
     return;
   }
   sel.value = mes;
-  const cajas = cajasBase.filter(c => String(c.fecha).startsWith(mes));
-  const tot = cajas.reduce((s, c) => s + (Number(c.total) || 0), 0);
-  const ef = cajas.reduce((s, c) => s + (Number(c.efectivo) || 0), 0);
-  const fi = cajas.reduce((s, c) => s + (Number(c.financiacion) || 0), 0);
-  const obj = cajas.find(c => Number(c.obj_diario) > 0)?.obj_diario || 0;
-  const cum = cajas.filter(c => (Number(c.total) || 0) >= (Number(c.obj_diario) || Number(obj) || 0)).length;
-  set('t-tot', eur(tot)); set('t-dias', cajas.length + ' días con caja');
-  set('t-obj', obj ? eur(obj) : '—'); set('t-obj-s', obj ? (cum + '/' + cajas.length + ' días cumplidos') : 'Sin objetivo diario');
-  set('t-ef', eur(ef)); set('t-ef-s', tot > 0 ? ((ef/tot)*100).toFixed(1) + '% del total' : '');
-  set('t-fi', eur(fi)); set('t-fi-s', tot > 0 ? ((fi/tot)*100).toFixed(1) + '% del total' : '');
-  const dias = cajas.map(c => new Date(String(c.fecha).slice(0,10) + 'T12:00').getDate().toString());
-  mkChart('c-caja', 'line', dias, [
-    { label: 'Cobrado', data: cajas.map(c => Number(c.total) || 0), borderColor: '#1B5FA8', backgroundColor: 'rgba(27,95,168,0.08)', fill: true, tension: 0.4, pointRadius: 3 },
-    { label: 'Objetivo', data: cajas.map(c => Number(c.obj_diario) || Number(obj) || 0), borderColor: '#D4502A', borderDash: [5, 3], pointRadius: 0 }
-  ]);
-  document.getElementById('tb-tes').innerHTML = cajas.map(c => {
-    const tar = (Number(c.tarjeta_caixa)||0)+(Number(c.tarjeta_kutxa)||0)+(Number(c.tarjeta_sabadell)||0)+(Number(c.tarjeta_cajamar)||0)+(Number(c.tarjeta_bbva)||0);
-    const ok = (Number(c.total)||0) >= (Number(c.obj_diario)||Number(obj)||0);
-    return `<tr><td style="font-weight:500">${new Date(String(c.fecha).slice(0,10)+'T12:00').getDate()}</td><td>${eur(Number(c.efectivo)||0)}</td><td>${eur(tar)}</td><td>${eur(Number(c.transferencia)||0)}</td><td>${eur(Number(c.financiacion)||0)}</td><td class="tr" style="font-weight:600">${eur(Number(c.total)||0)}</td><td>${obj ? `<span class="pill ${ok?'pg':'pa'}">${ok?'✓ Obj':'Bajo obj'}</span>` : '<span class="pill pb">Con caja</span>'}</td></tr>`;
-  }).join('');
+  const t = tesBase.find(r => r.mes === mes) || {};
+  const totalTes = Number(t.total_tesoreria) || 0;
+  const totalCaja = Number(t.total_caja) || 0;
+  const efectivo = Number(t.efectivo) || 0;
+  const ff = Number(t.ff_aprobada) || 0;
+  const traspaso = Number(t.traspaso) || 0;
+
+  set('t-tot', eur(totalTes)); set('t-dias', 'Total cuadro B40:N42');
+  set('t-obj', eur(totalCaja)); set('t-obj-s', 'Caja + tarjetas + transferencia + FF');
+  set('t-ef', eur(efectivo)); set('t-ef-s', totalTes > 0 ? ((efectivo/totalTes)*100).toFixed(1) + '% del total' : '');
+  set('t-fi', eur(ff)); set('t-fi-s', totalTes > 0 ? ((ff/totalTes)*100).toFixed(1) + '% del total' : '');
+
+  const cuentas = [
+    ['Efectivo', Number(t.efectivo)||0, 'B41'],
+    ['FF aprobada', Number(t.ff_aprobada)||0, 'C41'],
+    ['Caixa', Number(t.caixa)||0, 'D41'],
+    ['Sabadell', Number(t.sabadell)||0, 'E41'],
+    ['Kutxa', Number(t.kutxa)||0, 'F41'],
+    ['Cajamar', Number(t.cajamar)||0, 'G41'],
+    ['BBVA', Number(t.bbva)||0, 'H/G41 según mes'],
+    ['Transferencia', Number(t.transferencia)||0, 'H/I41 según mes'],
+    ['Sabadell línea', Number(t.sabadell_linea)||0, 'L/M41 según mes'],
+    ['Traspaso', traspaso, 'fila 42'],
+  ].filter(x => Math.abs(x[1]) > 0.0001);
+
+  mkChart('c-caja', 'bar', cuentas.map(x => x[0]), [{ data: cuentas.map(x => x[1]), backgroundColor: '#1B5FA8', borderRadius: 5 }]);
+  document.getElementById('tb-tes').innerHTML = [
+    ...cuentas.map(([nombre, importe, origen]) => `<tr><td style="font-weight:500">${nombre}</td><td class="tr" style="font-weight:600">${eur(importe)}</td><td style="font-size:12px;color:var(--text3)">${origen}</td><td><span class="pill pb">Cuenta</span></td></tr>`),
+    `<tr><td style="font-weight:600">Total caja operativa</td><td class="tr" style="font-weight:700">${eur(totalCaja)}</td><td style="font-size:12px;color:var(--text3)">primer TTL</td><td><span class="pill pg">Subtotal</span></td></tr>`,
+    `<tr><td style="font-weight:700">Total tesorería</td><td class="tr" style="font-weight:800">${eur(totalTes)}</td><td style="font-size:12px;color:var(--text3)">último TTL</td><td><span class="pill pg">Total</span></td></tr>`
+  ].join('');
 }
 
 function renderGastos() {

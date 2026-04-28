@@ -178,7 +178,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div class="metrics m3" style="margin-bottom:0">
       <div class="metric"><div class="ml">Disponible en líneas</div><div class="mv" id="t-bank-disponible">—</div><div class="ms">Liquidez adicional no dispuesta</div></div>
       <div class="metric"><div class="ml">Dispuesto en líneas</div><div class="mv" id="t-bank-dispuesto">—</div><div class="ms">Riesgo bancario usado</div></div>
-      <div class="metric"><div class="ml">Tesorería + disponible</div><div class="mv" id="t-bank-liquidez">—</div><div class="ms">Caja actual + líneas disponibles</div></div>
+      <div class="metric"><div class="ml">Caja operativa + disponible</div><div class="mv" id="t-bank-liquidez">—</div><div class="ms">Caja operativa + líneas disponibles</div></div>
     </div>
   </div>
 </div>
@@ -339,7 +339,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-28-8 cargado: lineas de credito usan DISPONIBLE del Excel y calculan dispuesto = limite - disponible");
+console.log("INDEX FINANCIERO v2026-04-28-9 cargado: liquidez potencial = caja operativa + disponible en lineas");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1011,7 +1011,7 @@ function renderTes() {
   set('t-fi', eur(ff)); set('t-fi-s', totalTes > 0 ? ((ff/totalTes)*100).toFixed(1) + '% del total' : '');
   set('t-bank-disponible', eur(bankSummary.disponibleLineas));
   set('t-bank-dispuesto', eur(bankSummary.dispuestoLineas));
-  set('t-bank-liquidez', eur(totalTes + bankSummary.disponibleLineas));
+  set('t-bank-liquidez', eur(totalCaja + bankSummary.disponibleLineas));
 
   const cuentas = [
     ['Efectivo', Number(t.efectivo)||0, 'B41'],

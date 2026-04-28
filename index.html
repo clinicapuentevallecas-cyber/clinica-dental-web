@@ -124,6 +124,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
   <div class="nav-item" onclick="nav('gastos',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M5 6h6M5 9h4" stroke-linecap="round"/></svg>Gastos</div>
   <div class="nav-item" onclick="nav('prevision',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12l4-4 3 2 5-6" stroke-linecap="round"/></svg>Previsión</div>
   <div class="nav-s">Operativa</div>
+  <div class="nav-item" onclick="nav('productos',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M4 7h8M4 10h5" stroke-linecap="round"/></svg>Productos bancarios</div>
   <div class="nav-item" onclick="nav('financiaciones',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2" stroke-linecap="round"/></svg>Financiaciones</div>
   <div class="nav-item" onclick="nav('devoluciones',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8l3-3v2h5a2 2 0 0 1 0 4H8" stroke-linecap="round"/></svg>Devoluciones</div>
   <div class="nav-item" onclick="nav('equipo',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="5" r="2.5"/><path d="M1 13c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg>Equipo</div>
@@ -171,10 +172,37 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div class="metric"><div class="ml">Financiado</div><div class="mv" id="t-fi">—</div><div class="ms" id="t-fi-s"></div></div>
   </div>
   <div class="card mb"><div class="ct">Distribución por cuenta</div><div style="height:230px;position:relative"><canvas id="c-caja"></canvas></div></div>
-  <div class="card"><div class="ct">Detalle de cuentas del mes</div><div class="tw"><table><thead><tr><th>Cuenta</th><th class="tr">Importe</th><th>Origen</th><th>Estado</th></tr></thead><tbody id="tb-tes"></tbody></table></div></div>
+  <div class="card mb"><div class="ct">Detalle de cuentas del mes</div><div class="tw"><table><thead><tr><th>Cuenta</th><th class="tr">Importe</th><th>Origen</th><th>Estado</th></tr></thead><tbody id="tb-tes"></tbody></table></div></div>
+  <div class="card">
+    <div class="ct">Productos bancarios y liquidez potencial</div>
+    <div class="metrics m3" style="margin-bottom:0">
+      <div class="metric"><div class="ml">Disponible en líneas</div><div class="mv" id="t-bank-disponible">—</div><div class="ms">Liquidez adicional no dispuesta</div></div>
+      <div class="metric"><div class="ml">Dispuesto en líneas</div><div class="mv" id="t-bank-dispuesto">—</div><div class="ms">Riesgo bancario usado</div></div>
+      <div class="metric"><div class="ml">Tesorería + disponible</div><div class="mv" id="t-bank-liquidez">—</div><div class="ms">Caja actual + líneas disponibles</div></div>
+    </div>
+  </div>
 </div>
 
-<!-- GASTOS -->
+<!-- PRODUCTOS BANCARIOS -->
+<div class="page" id="page-productos">
+  <div class="ph"><div class="pt">Productos bancarios</div><div class="ps">Líneas de crédito como liquidez disponible y crédito BBVA como deuda bancaria inicial</div></div>
+  <div class="metrics">
+    <div class="metric"><div class="ml">Límite líneas</div><div class="mv" id="bp-limite">—</div><div class="ms">Sabadell + BBVA</div></div>
+    <div class="metric"><div class="ml">Dispuesto líneas</div><div class="mv dn" id="bp-dispuesto">—</div><div class="ms">Importe utilizado</div></div>
+    <div class="metric"><div class="ml">Disponible líneas</div><div class="mv up" id="bp-disponible">—</div><div class="ms">Colchón de liquidez</div></div>
+    <div class="metric"><div class="ml">Crédito BBVA inicial</div><div class="mv" id="bp-prestamo">—</div><div class="ms">Principal concedido</div></div>
+  </div>
+  <div class="g2 mb">
+    <div class="card"><div class="ct">Uso de líneas de crédito</div><div style="height:230px;position:relative"><canvas id="c-bank-lines"></canvas></div></div>
+    <div class="card"><div class="ct">Cómo impacta en tesorería</div>
+      <div class="al as2">✓ Las líneas de crédito no se tratan como ingreso: se muestran como <strong>liquidez disponible</strong>.</div>
+      <div class="al aw">⚠️ Lo dispuesto reduce el disponible y aumenta la deuda bancaria utilizada.</div>
+      <div class="al" style="background:var(--accent-light);color:#0C3E78;border:1px solid rgba(27,95,168,.15)">ℹ️ El crédito BBVA de 30.000 € se muestra como deuda/principal inicial, no como caja recurrente.</div>
+    </div>
+  </div>
+  <div class="card"><div class="ct">Detalle de productos</div><div class="tw"><table><thead><tr><th>Banco</th><th>Producto</th><th class="tr">Límite / Inicial</th><th class="tr">Dispuesto</th><th class="tr">Disponible</th><th>Uso</th><th>Origen</th></tr></thead><tbody id="tb-bank-products"></tbody></table></div></div>
+</div>
+
 <div class="page" id="page-gastos">
   <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
     <div><div class="pt">Gastos generales</div><div class="ps">Leído desde Google Sheets · GastosGenerales</div></div>
@@ -311,7 +339,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-28-6 cargado: deteccion automatica de hojas de caja y tesoreria B40:N42");
+console.log("INDEX FINANCIERO v2026-04-28-7 cargado: productos bancarios integrados en tesoreria");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -696,6 +724,20 @@ const MS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','D
 const COLORS = ['#1B5FA8','#1A9E72','#B87318','#D4502A','#5B52B8','#2AA68E','#888780'];
 const eur = n => n == null ? '—' : new Intl.NumberFormat('es-ES', {style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
 const fdate = d => d ? String(d).slice(0, 10) : '—';
+
+// ============================================================
+// PRODUCTOS BANCARIOS
+// ============================================================
+const BANK_PRODUCTS = [
+  { id: 'sabadell_linea', banco: 'Banco Sabadell', producto: 'Línea de crédito', tipo: 'linea', limite: 30000, origen: 'Automático si existe: Sabadell línea en B40:N42' },
+  { id: 'bbva_linea', banco: 'BBVA', producto: 'Línea de crédito', tipo: 'linea', limite: 40000, origen: 'Manual' },
+  { id: 'bbva_credito', banco: 'BBVA', producto: 'Crédito', tipo: 'prestamo', principal: 30000, origen: 'Principal inicial contratado' },
+];
+function latestTesRecord() { const arr = (D.tes || []).slice().sort((a,b) => String(a.mes).localeCompare(String(b.mes))); return arr[arr.length - 1] || {}; }
+function manualBankValue(id) { const raw = localStorage.getItem('bp_dispuesto_' + id); if (raw === null || raw === '') return null; const n = Number(raw); return Number.isFinite(n) ? Math.max(0, n) : null; }
+function setManualBankValue(id, value) { const n = Math.max(0, Number(String(value).replace(',', '.')) || 0); localStorage.setItem('bp_dispuesto_' + id, String(n)); renderProductos(); renderTes(); }
+function getBankProductsComputed() { const latest = latestTesRecord(); const sabadellAuto = Math.abs(Number(latest.sabadell_linea) || 0); return BANK_PRODUCTS.map(p => { if (p.tipo === 'prestamo') return { ...p, limite: p.principal, dispuesto: p.principal, disponible: null, usoPct: null }; const manual = manualBankValue(p.id); const auto = p.id === 'sabadell_linea' ? sabadellAuto : 0; const dispuesto = Math.min(p.limite, manual !== null ? manual : auto); const disponible = Math.max(0, p.limite - dispuesto); return { ...p, dispuesto, disponible, usoPct: p.limite > 0 ? (dispuesto / p.limite) * 100 : 0, origenDato: manual !== null ? 'Manual' : p.origen }; }); }
+function getBankSummary() { const productos = getBankProductsComputed(); const lineas = productos.filter(p => p.tipo === 'linea'); return { productos, limiteLineas: lineas.reduce((s,p)=>s+(p.limite||0),0), dispuestoLineas: lineas.reduce((s,p)=>s+(p.dispuesto||0),0), disponibleLineas: lineas.reduce((s,p)=>s+(p.disponible||0),0), prestamoInicial: productos.filter(p=>p.tipo==='prestamo').reduce((s,p)=>s+(p.principal||0),0) }; }
 const charts = {};
 
 function mkChart(id, type, labels, datasets, extra = {}) {
@@ -872,7 +914,7 @@ function esCajaReal(c) {
 
 function renderAll() {
   renderEmpresaBars();
-  renderResumen(); renderTes(); renderGastos(); renderPrev();
+  renderResumen(); renderTes(); renderProductos(); renderGastos(); renderPrev();
   renderFins(); renderDevs(); renderEquipo(); renderObjs();
 }
 
@@ -932,6 +974,10 @@ function renderTes() {
     set('t-tot', eur(0)); set('t-dias', 'Sin datos de B40:N42'); set('t-obj', '—'); set('t-obj-s', ''); set('t-ef', eur(0)); set('t-ef-s', ''); set('t-fi', eur(0)); set('t-fi-s', '');
     document.getElementById('tb-tes').innerHTML = '<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:24px">Sin datos de tesorería. Pulsa Sincronizar para leer los cuadros B40:N42.</td></tr>';
     mkChart('c-caja', 'bar', [], [{ data: [] }]);
+    const bs0 = getBankSummary();
+    set('t-bank-disponible', eur(bs0.disponibleLineas));
+    set('t-bank-dispuesto', eur(bs0.dispuestoLineas));
+    set('t-bank-liquidez', eur(bs0.disponibleLineas));
     return;
   }
   sel.value = mes;
@@ -941,11 +987,15 @@ function renderTes() {
   const efectivo = Number(t.efectivo) || 0;
   const ff = Number(t.ff_aprobada) || 0;
   const traspaso = Number(t.traspaso) || 0;
+  const bankSummary = getBankSummary();
 
   set('t-tot', eur(totalTes)); set('t-dias', 'Total cuadro B40:N42');
   set('t-obj', eur(totalCaja)); set('t-obj-s', 'Caja + tarjetas + transferencia + FF');
   set('t-ef', eur(efectivo)); set('t-ef-s', totalTes > 0 ? ((efectivo/totalTes)*100).toFixed(1) + '% del total' : '');
   set('t-fi', eur(ff)); set('t-fi-s', totalTes > 0 ? ((ff/totalTes)*100).toFixed(1) + '% del total' : '');
+  set('t-bank-disponible', eur(bankSummary.disponibleLineas));
+  set('t-bank-dispuesto', eur(bankSummary.dispuestoLineas));
+  set('t-bank-liquidez', eur(totalTes + bankSummary.disponibleLineas));
 
   const cuentas = [
     ['Efectivo', Number(t.efectivo)||0, 'B41'],
@@ -966,6 +1016,23 @@ function renderTes() {
     `<tr><td style="font-weight:600">Total caja operativa</td><td class="tr" style="font-weight:700">${eur(totalCaja)}</td><td style="font-size:12px;color:var(--text3)">primer TTL</td><td><span class="pill pg">Subtotal</span></td></tr>`,
     `<tr><td style="font-weight:700">Total tesorería</td><td class="tr" style="font-weight:800">${eur(totalTes)}</td><td style="font-size:12px;color:var(--text3)">último TTL</td><td><span class="pill pg">Total</span></td></tr>`
   ].join('');
+}
+
+function renderProductos() {
+  const s = getBankSummary();
+  set('bp-limite', eur(s.limiteLineas)); set('bp-dispuesto', eur(s.dispuestoLineas)); set('bp-disponible', eur(s.disponibleLineas)); set('bp-prestamo', eur(s.prestamoInicial));
+  const lineas = s.productos.filter(p => p.tipo === 'linea');
+  mkChart('c-bank-lines', 'bar', lineas.map(p => p.banco), [
+    { label: 'Dispuesto', data: lineas.map(p => p.dispuesto || 0), backgroundColor: '#D4502A', borderRadius: 5 },
+    { label: 'Disponible', data: lineas.map(p => p.disponible || 0), backgroundColor: '#1A9E72', borderRadius: 5 },
+  ], { plugins: { legend: { display: true, labels: { font: { family: 'DM Sans', size: 11 } } }, tooltip: { callbacks: { label: c => (c.dataset.label || '') + ': ' + eur(c.raw) } } }, scales: { x: { stacked: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11, family: 'DM Sans' }, color: '#A8A59F' } }, y: { stacked: true, grid: { color: 'rgba(0,0,0,0.04)' }, ticks: { font: { size: 11, family: 'DM Sans' }, color: '#A8A59F', callback: v => v >= 1000 ? (v/1000).toFixed(0)+'k' : v } } } });
+  const tbody = document.getElementById('tb-bank-products');
+  if (!tbody) return;
+  tbody.innerHTML = s.productos.map(p => {
+    if (p.tipo === 'prestamo') return `<tr><td style="font-weight:500">${p.banco}</td><td>${p.producto}</td><td class="tr" style="font-weight:600">${eur(p.principal)}</td><td class="tr">—</td><td class="tr">—</td><td><span class="pill pz">Principal inicial</span></td><td style="font-size:12px;color:var(--text3)">${p.origen}</td></tr>`;
+    const pct = Math.max(0, Math.min(100, p.usoPct || 0));
+    return `<tr><td style="font-weight:500">${p.banco}</td><td>${p.producto}</td><td class="tr" style="font-weight:600">${eur(p.limite)}</td><td class="tr"><input value="${p.dispuesto || 0}" onchange="setManualBankValue('${p.id}', this.value)" style="width:90px;text-align:right;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"> €</td><td class="tr" style="font-weight:600;color:var(--green)">${eur(p.disponible)}</td><td><div style="width:120px;background:var(--bg2);border-radius:999px;overflow:hidden;height:8px;margin-bottom:4px"><div style="width:${pct}%;height:8px;background:${pct>80?'#D4502A':pct>50?'#B87318':'#1A9E72'}"></div></div><span style="font-size:11px;color:var(--text3)">${pct.toFixed(1)}% usado</span></td><td style="font-size:12px;color:var(--text3)">${p.origenDato || p.origen}</td></tr>`;
+  }).join('');
 }
 
 function renderGastos() {

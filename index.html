@@ -240,21 +240,41 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 <!-- PREVISIÓN -->
 <div class="page" id="page-prevision">
   <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-    <div><div class="pt">Previsión de tesorería</div><div class="ps">Balance ingresos vs gastos por mes</div></div>
+    <div><div class="pt">Previsión anual y escenarios</div><div class="ps">Tres escenarios de ventas con los mismos gastos por partida. Editable por mes.</div></div>
     <div id="empresa-bar-p" class="empresa-bar" style="margin-bottom:0"></div>
   </div>
+  <div class="card mb">
+    <div class="ch" style="align-items:flex-start;gap:14px;flex-wrap:wrap">
+      <div>
+        <div class="ct" style="margin:0">Escenario activo</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Los ingresos parten del objetivo mensual. Los gastos se mantienen iguales en los tres escenarios.</div>
+      </div>
+      <div id="prev-scenarios" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--text3)">Saldo inicial caja operativa</span>
+        <input id="prev-opening" type="number" step="0.01" style="width:140px;padding:7px 9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);font-family:'DM Sans';font-size:12px">
+        <button class="eb" onclick="savePrevOpening()">Guardar</button>
+      </div>
+    </div>
+  </div>
   <div class="metrics">
-    <div class="metric"><div class="ml">Balance Enero</div><div class="mv" id="p-1">—</div><div class="ms" id="p-1s"></div></div>
-    <div class="metric"><div class="ml">Balance Febrero</div><div class="mv" id="p-2">—</div><div class="ms" id="p-2s"></div></div>
-    <div class="metric"><div class="ml">Balance Marzo</div><div class="mv" id="p-3">—</div><div class="ms" id="p-3s"></div></div>
-    <div class="metric"><div class="ml">Balance Abril</div><div class="mv" id="p-4">—</div><div class="ms" id="p-4s"></div></div>
+    <div class="metric"><div class="ml">Ingresos anuales</div><div class="mv" id="pa-ing">—</div><div class="ms" id="pa-ing-s"></div></div>
+    <div class="metric"><div class="ml">Gastos anuales</div><div class="mv dn" id="pa-gas">—</div><div class="ms" id="pa-gas-s"></div></div>
+    <div class="metric"><div class="ml">Balance anual</div><div class="mv" id="pa-bal">—</div><div class="ms" id="pa-bal-s"></div></div>
+    <div class="metric"><div class="ml">Tesorería final prevista</div><div class="mv" id="pa-tes">—</div><div class="ms" id="pa-tes-s"></div></div>
   </div>
   <div class="card mb">
-    <div class="ct">Facturado vs Gasto</div>
-    <div class="leg"><span><span class="lsq" style="background:#1B5FA8"></span>Facturado</span><span><span class="lsq" style="background:#D4502A"></span>Gastado</span></div>
-    <div style="height:240px;position:relative"><canvas id="c-prev"></canvas></div>
+    <div class="ct">Ingresos, gastos y tesorería por mes</div>
+    <div class="leg"><span><span class="lsq" style="background:#1B5FA8"></span>Ingresos</span><span><span class="lsq" style="background:#D4502A"></span>Gastos</span><span><span class="lsq" style="background:#1A9E72"></span>Tesorería prevista</span></div>
+    <div style="height:270px;position:relative"><canvas id="c-prev-anual"></canvas></div>
   </div>
-  <div class="card"><div class="ct">Resumen mensual</div><div class="tw"><table><thead><tr><th>Mes</th><th class="tr">Facturado</th><th class="tr">Gasto</th><th class="tr">Balance</th><th class="tr">Acumulado</th></tr></thead><tbody id="tb-prev"></tbody></table></div></div>
+  <div class="card mb">
+    <div class="ct">Gastos por partidas</div>
+    <div class="ps" style="margin-bottom:8px">Si falta un dato mensual se estima con la media del primer trimestre de esa partida. Las celdas editadas sobrescriben la estimación.</div>
+    <div style="height:280px;position:relative"><canvas id="c-prev-part"></canvas></div>
+  </div>
+  <div class="card mb"><div class="ct">Resumen mensual del escenario</div><div class="tw"><table><thead><tr><th>Mes</th><th class="tr">Ingresos</th><th class="tr">Gastos</th><th class="tr">Balance</th><th class="tr">Tesorería prevista</th></tr></thead><tbody id="tb-prev-annual"></tbody></table></div></div>
+  <div class="card"><div class="ch"><div class="ct" style="margin:0">Editor anual por partidas</div><span class="filter-tag" id="prev-edit-info"></span></div><div class="tw"><table><thead><tr><th>Partida</th><th>Base</th><th>Ene</th><th>Feb</th><th>Mar</th><th>Abr</th><th>May</th><th>Jun</th><th>Jul</th><th>Ago</th><th>Sep</th><th>Oct</th><th>Nov</th><th>Dic</th><th class="tr">Total anual</th></tr></thead><tbody id="tb-prev-edit"></tbody></table></div></div>
 </div>
 
 <!-- FINANCIACIONES -->
@@ -341,7 +361,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-28-11 cargado: gastos con estado pagado/pendiente y fecha estimada de pago");
+console.log("INDEX FINANCIERO v2026-04-28-12 cargado: prevision anual editable con escenarios objetivo, +5 y +10");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:

@@ -257,6 +257,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div class="metric"><div class="ml">Pendiente pasado</div><div class="mv dn" id="g-pend-pas">—</div><div class="ms" id="g-pend-pas-s"></div></div>
     <div class="metric"><div class="ml">Próximos 15 días</div><div class="mv dn" id="g-pend-15">—</div><div class="ms" id="g-pend-15-s"></div></div>
     <div class="metric"><div class="ml">Próximo mes</div><div class="mv dn" id="g-pend-30">—</div><div class="ms" id="g-pend-30-s"></div></div>
+    <div class="metric"><div class="ml">Pendiente resto</div><div class="mv dn" id="g-pend-resto">—</div><div class="ms" id="g-pend-resto-s"></div></div>
     <div class="metric"><div class="ml">Pagado</div><div class="mv up" id="g-paid">—</div><div class="ms" id="g-paid-s"></div></div>
   </div>
   <div class="g2 mb">
@@ -444,7 +445,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-21 cargado: gastos toma fecha de pago del Excel como pago estimado");
+console.log("INDEX FINANCIERO v2026-04-29-22 cargado: gastos pendientes incluyen pendiente resto");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1665,6 +1666,7 @@ function gastoPendienteResumen(gastos) {
     prox30: { rows: [], importe: 0 },
     futuro: { rows: [], importe: 0 },
     sin_fecha: { rows: [], importe: 0 },
+    resto: { rows: [], importe: 0 },
     pagado: { rows: [], importe: 0 },
   };
   gastos.forEach(g => {
@@ -1673,6 +1675,7 @@ function gastoPendienteResumen(gastos) {
       out.total.rows.push(g); out.total.importe += imp;
       const b = gastoPendienteBucket(g);
       if (out[b]) { out[b].rows.push(g); out[b].importe += imp; }
+      if (b === 'futuro' || b === 'sin_fecha') { out.resto.rows.push(g); out.resto.importe += imp; }
     }
     if (gastoPagado(g)) { out.pagado.rows.push(g); out.pagado.importe += imp; }
   });
@@ -1694,6 +1697,8 @@ function renderGastos() {
   set('g-pend-15-s', pr.prox15.rows.length + ' pagos previstos');
   set('g-pend-30', eur(pr.prox30.importe));
   set('g-pend-30-s', pr.prox30.rows.length + ' pagos previstos');
+  set('g-pend-resto', eur(pr.resto.importe));
+  set('g-pend-resto-s', pr.resto.rows.length + ' sin fecha o > 30 días');
   set('g-paid', eur(pr.pagado.importe));
   set('g-paid-s', pr.pagado.rows.length + ' pagados');
   const pc = {}; gastos.forEach(g => { if (g.fuente_gasto && g.importe) pc[g.fuente_gasto] = (pc[g.fuente_gasto] || 0) + g.importe; });
@@ -1727,6 +1732,7 @@ function renderGastos() {
     '<option value="__pend_pasados" '+(curEst==='__pend_pasados'?'selected':'')+'>Pendientes pasados</option>' +
     '<option value="__pend_15" '+(curEst==='__pend_15'?'selected':'')+'>Pendientes próximos 15 días</option>' +
     '<option value="__pend_mes" '+(curEst==='__pend_mes'?'selected':'')+'>Pendientes próximo mes</option>' +
+    '<option value="__pend_resto" '+(curEst==='__pend_resto'?'selected':'')+'>Pendiente resto</option>' +
     '<option value="__pend_sin_fecha" '+(curEst==='__pend_sin_fecha'?'selected':'')+'>Pendientes sin fecha</option>';
   filterG();
 }
@@ -1750,6 +1756,7 @@ function filterG() {
        estadoF === '__pend_pasados' ? (gastoPendiente(g) && gastoPendienteBucket(g) === 'pasado') :
        estadoF === '__pend_15' ? (gastoPendiente(g) && gastoPendienteBucket(g) === 'prox15') :
        estadoF === '__pend_mes' ? (gastoPendiente(g) && gastoPendienteBucket(g) === 'prox30') :
+       estadoF === '__pend_resto' ? (gastoPendiente(g) && ['futuro','sin_fecha'].includes(gastoPendienteBucket(g))) :
        g.estado === estadoF))
   );
   const totFil = rows.reduce((s,g)=>s+(g.importe||0),0);

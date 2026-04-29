@@ -160,7 +160,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 <!-- TESORERÍA -->
 <div class="page" id="page-tesoreria">
   <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-    <div><div class="pt">Tesorería — Cuentas</div><div class="ps">Detecta automáticamente todas las pestañas de caja y lee B40:N42</div></div>
+    <div><div class="pt">Tesorería — Cuentas</div><div class="ps">Fotografía del dinero real disponible: saldos bancarios, efectivo y líneas disponibles. El movimiento operativo se muestra separado.</div></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <div id="empresa-bar-t" class="empresa-bar" style="margin-bottom:0"></div>
       <select class="sel" id="mes-sel" onchange="renderTes()"></select>
@@ -400,7 +400,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-17 cargado: tesoreria Bridge/Vallecas calcula ingresos menos gastos por empresa");
+console.log("INDEX FINANCIERO v2026-04-29-18 cargado: tesoreria como fotografia bancaria y resumen operativo separado");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1106,14 +1106,61 @@ function renderResumen() {
     [{ data: rm.map(m => (pm[m]||0) - (gm[m]||0)), backgroundColor: rm.map(m => (pm[m]||0)-(gm[m]||0) >= 0 ? '#1A9E72' : '#D4502A'), borderRadius: 5 }]);
 }
 
+
 function mesKeyFromFecha(fecha) {
   const f = String(fecha || '').slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(f) ? f.slice(0, 7) : '';
 }
 
-function tesoreriaOperativaMensual() {
-  const ingresos = ingresosFiltradosEmpresa();
-  const gastos = filtrarEmp(D.gastos || [], 'empresa');
+function filterEmpresaFor(arr, emp, campo='empresa') {
+  if (emp === 'Global') return arr || [];
+  const target = normTxt(emp);
+  return (arr || []).filter(r => normTxt(r[campo] || '').includes(target));
+}
+
+function tesManualKey(emp) {
+  return 'tes_saldos_' + String(emp || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').toLowerCase();
+}
+function defaultManualTreasuryAccounts(emp) {
+  return [{ banco: 'Banco', cuenta: 'Cuenta corriente principal', saldo: 0 }];
+}
+function getManualTreasuryAccounts(emp) {
+  try {
+    const raw = localStorage.getItem(tesManualKey(emp));
+    const arr = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(arr) && arr.length) return arr.map(a => ({ banco: a.banco || 'Banco', cuenta: a.cuenta || 'Cuenta', saldo: Number(a.saldo) || 0 }));
+  } catch (_) {}
+  return defaultManualTreasuryAccounts(emp);
+}
+function saveManualTreasuryAccounts(emp, arr) {
+  localStorage.setItem(tesManualKey(emp), JSON.stringify((arr || []).map(a => ({ banco: a.banco || '', cuenta: a.cuenta || '', saldo: Number(a.saldo) || 0 }))));
+}
+function setManualTreasuryAccount(emp, idx, field, value) {
+  const arr = getManualTreasuryAccounts(emp);
+  if (!arr[idx]) return;
+  arr[idx][field] = field === 'saldo' ? Number(String(value).replace(',', '.')) || 0 : value;
+  saveManualTreasuryAccounts(emp, arr);
+  renderTes();
+}
+function addManualTreasuryAccount(emp) {
+  const arr = getManualTreasuryAccounts(emp);
+  arr.push({ banco: 'Banco', cuenta: 'Nueva cuenta', saldo: 0 });
+  saveManualTreasuryAccounts(emp, arr);
+  renderTes();
+}
+function removeManualTreasuryAccount(emp, idx) {
+  const arr = getManualTreasuryAccounts(emp);
+  arr.splice(idx, 1);
+  saveManualTreasuryAccounts(emp, arr.length ? arr : defaultManualTreasuryAccounts(emp));
+  renderTes();
+}
+function manualTreasuryTotal(emp) {
+  return getManualTreasuryAccounts(emp).reduce((s,a)=>s+(Number(a.saldo)||0),0);
+}
+
+function tesoreriaOperativaMensual(emp = empresaActual) {
+  const ingresos = filterEmpresaFor(allIngresosOperativos(), emp, 'empresa');
+  const gastos = filterEmpresaFor(D.gastos || [], emp, 'empresa');
   const mesesSet = new Set();
   ingresos.forEach(i => { const m = mesKeyFromFecha(i.fecha); if (m) mesesSet.add(m); });
   gastos.forEach(g => { const m = mesKeyFromFecha(g.fecha); if (m) mesesSet.add(m); });
@@ -1128,134 +1175,183 @@ function tesoreriaOperativaMensual() {
     return { mes: m, ingresos: totalIngresos, gastos: totalGastos, balance, iva: ivaIngresos, ingresosCount: ingresosMes.length, gastosCount: gastosMes.length };
   });
 }
-
-function setTesLabels(mode) {
-  if (mode === 'operativa') {
-    set('t-l-tot', 'Balance del mes');
-    set('t-l-obj', 'Ingresos');
-    set('t-l-ef', 'Gastos');
-    set('t-l-fi', 'IVA ingresos');
-    set('t-chart-title', 'Ingresos vs gastos');
-    set('t-table-title', 'Detalle operativo del mes');
-  } else {
-    set('t-l-tot', 'Total del mes');
-    set('t-l-obj', 'Objetivo diario');
-    set('t-l-ef', 'Efectivo');
-    set('t-l-fi', 'Financiado');
-    set('t-chart-title', 'Distribución por cuenta');
-    set('t-table-title', 'Detalle de cuentas del mes');
-  }
-}
-
-function renderTesOperativa() {
-  setTesLabels('operativa');
+function selectedOperativeMonth(rows) {
   const sel = document.getElementById('mes-sel');
-  const rows = tesoreriaOperativaMensual();
-  const prevMes = sel.value;
+  const prev = sel?.value || '';
+  if (!sel) return rows[rows.length - 1]?.mes || '';
   sel.innerHTML = '';
   rows.forEach(r => {
     const o = document.createElement('option');
     o.value = r.mes;
-    o.textContent = `${M[+r.mes.slice(5)-1]} ${r.mes.slice(0,4)} · balance ${eur(r.balance)}`;
+    o.textContent = `${M[+r.mes.slice(5)-1]} ${r.mes.slice(0,4)} · mov. ${eur(r.balance)}`;
     sel.appendChild(o);
   });
-  const mes = rows.some(r => r.mes === prevMes) ? prevMes : (rows[rows.length - 1]?.mes || '');
-  const bankSummary = getBankSummary();
-  if (!mes) {
-    set('t-tot', eur(0)); setC('t-tot', 'mv');
-    set('t-dias', 'Sin ingresos o gastos con fecha para ' + empresaActual);
-    set('t-obj', eur(0)); set('t-obj-s', '0 ingresos');
-    set('t-ef', eur(0)); set('t-ef-s', '0 gastos');
-    set('t-fi', eur(0)); set('t-fi-s', 'IVA de facturas de ingresos');
-    document.getElementById('tb-tes').innerHTML = '<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:24px">Sin datos operativos para esta empresa. Revisa que los ingresos y los gastos tengan la columna Empresa informada.</td></tr>';
-    mkChart('c-caja', 'bar', [], [{ data: [] }]);
-    set('t-bank-disponible', eur(bankSummary.disponibleLineas));
-    set('t-bank-dispuesto', eur(bankSummary.dispuestoLineas));
-    set('t-bank-liquidez', eur(bankSummary.disponibleLineas));
-    return;
-  }
-  sel.value = mes;
-  const r = rows.find(x => x.mes === mes) || { ingresos:0, gastos:0, balance:0, iva:0, ingresosCount:0, gastosCount:0 };
-  set('t-tot', (r.balance >= 0 ? '+' : '') + eur(r.balance)); setC('t-tot', 'mv ' + (r.balance >= 0 ? 'up' : 'dn'));
-  set('t-dias', 'Ingresos menos gastos del mes');
-  set('t-obj', eur(r.ingresos)); set('t-obj-s', `${r.ingresosCount} registro(s) de ingresos`);
-  set('t-ef', eur(r.gastos)); set('t-ef-s', `${r.gastosCount} registro(s) de gastos generales`);
-  set('t-fi', eur(r.iva)); set('t-fi-s', 'IVA de ingresos para futuras declaraciones');
-  set('t-bank-disponible', eur(bankSummary.disponibleLineas));
-  set('t-bank-dispuesto', eur(bankSummary.dispuestoLineas));
-  set('t-bank-liquidez', eur(r.balance + bankSummary.disponibleLineas));
-
-  mkChart('c-caja', 'bar', ['Ingresos', 'Gastos', 'Balance'], [{ data: [r.ingresos, r.gastos, r.balance], backgroundColor: ['#1A9E72', '#D4502A', r.balance >= 0 ? '#1B5FA8' : '#B87318'], borderRadius: 5 }]);
-  document.getElementById('tb-tes').innerHTML = [
-    `<tr><td style="font-weight:600">Ingresos</td><td class="tr" style="font-weight:700;color:var(--green)">${eur(r.ingresos)}</td><td style="font-size:12px;color:var(--text3)">Sección Ingresos · empresa ${empresaActual}</td><td><span class="pill pg">Suma</span></td></tr>`,
-    `<tr><td style="font-weight:600">Gastos</td><td class="tr" style="font-weight:700;color:var(--red)">${eur(r.gastos)}</td><td style="font-size:12px;color:var(--text3)">Excel Gastos generales · columna Empresa</td><td><span class="pill pr">Resta</span></td></tr>`,
-    `<tr><td style="font-weight:700">Balance operativo</td><td class="tr" style="font-weight:800;color:${r.balance>=0?'var(--green)':'var(--red)'}">${r.balance>=0?'+':''}${eur(r.balance)}</td><td style="font-size:12px;color:var(--text3)">Ingresos - gastos</td><td><span class="pill ${r.balance>=0?'pg':'pr'}">Resultado</span></td></tr>`,
-    `<tr><td style="font-weight:500">IVA ingresos</td><td class="tr" style="font-weight:600">${eur(r.iva)}</td><td style="font-size:12px;color:var(--text3)">Facturas con IVA</td><td><span class="pill pb">Declaración</span></td></tr>`
-  ].join('');
+  const mes = rows.some(r => r.mes === prev) ? prev : (rows[rows.length - 1]?.mes || '');
+  if (mes) sel.value = mes;
+  return mes;
 }
 
-function renderTes() {
-  const useCuentaMode = empresaActual === 'Corporacion' && (D.tes || []).some(r => (r.empresa || 'Corporacion').toLowerCase().includes('corporacion'));
-  if (!useCuentaMode) return renderTesOperativa();
-  setTesLabels('cuentas');
-  const sel = document.getElementById('mes-sel');
-  const tesBase = (D.tes || []).filter(r => (r.empresa || 'Corporacion').toLowerCase().includes('corporacion')).sort((a,b) => String(a.mes).localeCompare(String(b.mes)));
-  const meses = tesBase.map(r => r.mes);
-  const prevMes = sel.value;
-  sel.innerHTML = '';
-  tesBase.forEach(r => {
-    const o = document.createElement('option');
-    o.value = r.mes;
-    o.textContent = `${M[+r.mes.slice(5)-1]} ${r.mes.slice(0,4)} · ${eur(Number(r.total_tesoreria)||0)}`;
-    sel.appendChild(o);
-  });
-
-  const mes = meses.includes(prevMes) ? prevMes : (meses[meses.length - 1] || '');
-  if (!mes) {
-    set('t-tot', eur(0)); set('t-dias', 'Sin datos de B40:N42'); set('t-obj', '—'); set('t-obj-s', ''); set('t-ef', eur(0)); set('t-ef-s', ''); set('t-fi', eur(0)); set('t-fi-s', '');
-    document.getElementById('tb-tes').innerHTML = '<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:24px">Sin datos de tesorería. Pulsa Sincronizar para leer los cuadros B40:N42.</td></tr>';
-    mkChart('c-caja', 'bar', [], [{ data: [] }]);
-    const bs0 = getBankSummary();
-    set('t-bank-disponible', eur(bs0.disponibleLineas));
-    set('t-bank-dispuesto', eur(bs0.dispuestoLineas));
-    set('t-bank-liquidez', eur(bs0.disponibleLineas));
-    return;
+function setTesLabels(mode) {
+  if (mode === 'cuentas') {
+    set('t-l-tot', 'Caja operativa');
+    set('t-l-obj', 'Disponible líneas');
+    set('t-l-ef', 'Efectivo');
+    set('t-l-fi', 'FF aprobada');
+    set('t-chart-title', 'Distribución por cuenta');
+    set('t-table-title', 'Detalle de saldos y líneas');
+  } else if (mode === 'global') {
+    set('t-l-tot', 'Caja operativa global');
+    set('t-l-obj', 'Disponible líneas');
+    set('t-l-ef', 'Movimiento mes');
+    set('t-l-fi', 'IVA ingresos');
+    set('t-chart-title', 'Saldos por empresa');
+    set('t-table-title', 'Fotografía bancaria global');
+  } else {
+    set('t-l-tot', 'Tesorería bancaria');
+    set('t-l-obj', 'Ingresos mes');
+    set('t-l-ef', 'Gastos mes');
+    set('t-l-fi', 'Balance operativo');
+    set('t-chart-title', 'Saldos bancarios configurados');
+    set('t-table-title', 'Fotografía bancaria y movimiento operativo');
   }
-  sel.value = mes;
-  const t = tesBase.find(r => r.mes === mes) || {};
-  const totalTes = Number(t.total_tesoreria) || 0;
+}
+
+function corpTesRecords() {
+  return (D.tes || []).filter(r => normTxt(r.empresa || 'Corporacion').includes('corporacion')).sort((a,b) => String(a.mes).localeCompare(String(b.mes)));
+}
+function selectedCorpTesRecord() {
+  const sel = document.getElementById('mes-sel');
+  const tesBase = corpTesRecords();
+  const prevMes = sel?.value || '';
+  if (sel) {
+    sel.innerHTML = '';
+    tesBase.forEach(r => {
+      const o = document.createElement('option');
+      o.value = r.mes;
+      o.textContent = `${M[+r.mes.slice(5)-1]} ${r.mes.slice(0,4)} · caja ${eur(Number(r.total_caja)||0)}`;
+      sel.appendChild(o);
+    });
+  }
+  const meses = tesBase.map(r => r.mes);
+  const mes = meses.includes(prevMes) ? prevMes : (meses[meses.length - 1] || '');
+  if (sel && mes) sel.value = mes;
+  return tesBase.find(r => r.mes === mes) || null;
+}
+
+function renderTesSinDatos(message) {
+  set('t-tot', eur(0)); setC('t-tot', 'mv'); set('t-dias', message || 'Sin saldos bancarios configurados');
+  set('t-obj', eur(0)); set('t-obj-s', ''); set('t-ef', eur(0)); set('t-ef-s', ''); set('t-fi', eur(0)); set('t-fi-s', '');
+  document.getElementById('tb-tes').innerHTML = `<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:24px">${message || 'Sin datos de tesorería.'}</td></tr>`;
+  mkChart('c-caja', 'bar', [], [{ data: [] }]);
+  set('t-bank-disponible', eur(0)); set('t-bank-dispuesto', eur(0)); set('t-bank-liquidez', eur(0));
+}
+
+function renderTesCorporacion() {
+  setTesLabels('cuentas');
+  const t = selectedCorpTesRecord();
+  if (!t) return renderTesSinDatos('Sin datos de tesorería de Corporación. Pulsa Sincronizar para leer los cuadros B40:N42.');
   const totalCaja = Number(t.total_caja) || 0;
   const efectivo = Number(t.efectivo) || 0;
   const ff = Number(t.ff_aprobada) || 0;
-  // Traspaso: movimiento interno hacia/desde linea de credito. No afecta a tesoreria operativa.
   const bankSummary = getBankSummary();
 
-  set('t-tot', eur(totalTes)); setC('t-tot', 'mv'); set('t-dias', 'Total cuadro B40:N42');
-  set('t-obj', eur(totalCaja)); set('t-obj-s', 'Caja + tarjetas + transferencia + FF');
-  set('t-ef', eur(efectivo)); set('t-ef-s', totalTes > 0 ? ((efectivo/totalTes)*100).toFixed(1) + '% del total' : '');
-  set('t-fi', eur(ff)); set('t-fi-s', totalTes > 0 ? ((ff/totalTes)*100).toFixed(1) + '% del total' : '');
+  set('t-tot', eur(totalCaja)); setC('t-tot', 'mv'); set('t-dias', 'Caja operativa real del cuadro B40:N42');
+  set('t-obj', eur(bankSummary.disponibleLineas)); set('t-obj-s', 'Líneas de crédito disponibles');
+  set('t-ef', eur(efectivo)); set('t-ef-s', totalCaja > 0 ? ((efectivo/totalCaja)*100).toFixed(1) + '% de caja operativa' : '');
+  set('t-fi', eur(ff)); set('t-fi-s', totalCaja > 0 ? ((ff/totalCaja)*100).toFixed(1) + '% de caja operativa' : '');
   set('t-bank-disponible', eur(bankSummary.disponibleLineas));
   set('t-bank-dispuesto', eur(bankSummary.dispuestoLineas));
   set('t-bank-liquidez', eur(totalCaja + bankSummary.disponibleLineas));
 
   const cuentas = [
-    ['Efectivo', Number(t.efectivo)||0, 'B41'],
-    ['FF aprobada', Number(t.ff_aprobada)||0, 'C41'],
-    ['Caixa', Number(t.caixa)||0, 'D41'],
-    ['Sabadell', Number(t.sabadell)||0, 'E41'],
-    ['Kutxa', Number(t.kutxa)||0, 'F41'],
-    ['Cajamar', Number(t.cajamar)||0, 'G41'],
-    ['BBVA', Number(t.bbva)||0, 'H/G41 según mes'],
-    ['Transferencia', Number(t.transferencia)||0, 'H/I41 según mes'],
-    ['Sabadell línea', Number(t.sabadell_linea)||0, 'L/M41 según mes'],
+    ['Efectivo', Number(t.efectivo)||0, 'B41', 'Caja'],
+    ['FF aprobada', Number(t.ff_aprobada)||0, 'C41', 'Caja'],
+    ['Caixa', Number(t.caixa)||0, 'D41', 'Banco'],
+    ['Sabadell', Number(t.sabadell)||0, 'E41', 'Banco'],
+    ['Kutxa', Number(t.kutxa)||0, 'F41', 'Banco'],
+    ['Cajamar', Number(t.cajamar)||0, 'G41', 'Banco'],
+    ['Transferencia', Number(t.transferencia)||0, 'H/I41 según mes', 'Banco'],
+  ].filter(x => Math.abs(x[1]) > 0.0001);
+  const lineas = [
+    ['BBVA línea disponible', Math.abs(Number(t.bbva)||0), 'H/G41 según mes', 'Línea crédito'],
+    ['Sabadell línea disponible', Math.abs(Number(t.sabadell_linea)||0), 'L/M41 según mes', 'Línea crédito'],
   ].filter(x => Math.abs(x[1]) > 0.0001);
 
   mkChart('c-caja', 'bar', cuentas.map(x => x[0]), [{ data: cuentas.map(x => x[1]), backgroundColor: '#1B5FA8', borderRadius: 5 }]);
   document.getElementById('tb-tes').innerHTML = [
-    ...cuentas.map(([nombre, importe, origen]) => `<tr><td style="font-weight:500">${nombre}</td><td class="tr" style="font-weight:600">${eur(importe)}</td><td style="font-size:12px;color:var(--text3)">${origen}</td><td><span class="pill pb">Cuenta</span></td></tr>`),
-    `<tr><td style="font-weight:600">Total caja operativa</td><td class="tr" style="font-weight:700">${eur(totalCaja)}</td><td style="font-size:12px;color:var(--text3)">primer TTL</td><td><span class="pill pg">Subtotal</span></td></tr>`,
-    `<tr><td style="font-weight:700">Total tesorería</td><td class="tr" style="font-weight:800">${eur(totalTes)}</td><td style="font-size:12px;color:var(--text3)">último TTL</td><td><span class="pill pg">Total</span></td></tr>`
+    ...cuentas.map(([nombre, importe, origen, estado]) => `<tr><td style="font-weight:500">${nombre}</td><td class="tr" style="font-weight:600">${eur(importe)}</td><td style="font-size:12px;color:var(--text3)">${origen}</td><td><span class="pill pb">${estado}</span></td></tr>`),
+    `<tr><td style="font-weight:700">Caja operativa</td><td class="tr" style="font-weight:800">${eur(totalCaja)}</td><td style="font-size:12px;color:var(--text3)">primer TTL</td><td><span class="pill pg">Subtotal</span></td></tr>`,
+    ...lineas.map(([nombre, importe, origen, estado]) => `<tr><td style="font-weight:500">${nombre}</td><td class="tr" style="font-weight:600;color:var(--green)">${eur(importe)}</td><td style="font-size:12px;color:var(--text3)">${origen}</td><td><span class="pill pz">${estado}</span></td></tr>`),
+    `<tr><td style="font-weight:700">Liquidez potencial</td><td class="tr" style="font-weight:800">${eur(totalCaja + bankSummary.disponibleLineas)}</td><td style="font-size:12px;color:var(--text3)">caja operativa + líneas disponibles</td><td><span class="pill pg">Total</span></td></tr>`
   ].join('');
+}
+
+function renderTesManualEmpresa(emp) {
+  setTesLabels('manual');
+  const rows = tesoreriaOperativaMensual(emp);
+  const mes = selectedOperativeMonth(rows);
+  const r = rows.find(x => x.mes === mes) || { ingresos:0, gastos:0, balance:0, iva:0, ingresosCount:0, gastosCount:0 };
+  const accounts = getManualTreasuryAccounts(emp);
+  const total = accounts.reduce((s,a)=>s+(Number(a.saldo)||0),0);
+
+  set('t-tot', eur(total)); setC('t-tot', 'mv'); set('t-dias', total ? 'Saldos bancarios introducidos manualmente' : 'Introduce saldos bancarios reales para esta empresa');
+  set('t-obj', eur(r.ingresos)); set('t-obj-s', `${r.ingresosCount} ingreso(s) del mes`);
+  set('t-ef', eur(r.gastos)); set('t-ef-s', `${r.gastosCount} gasto(s) del mes`);
+  set('t-fi', (r.balance >= 0 ? '+' : '') + eur(r.balance)); setC('t-fi', 'mv ' + (r.balance >= 0 ? 'up' : 'dn')); set('t-fi-s', 'Ingresos - gastos · no es saldo bancario');
+  set('t-bank-disponible', eur(0)); set('t-bank-dispuesto', eur(0)); set('t-bank-liquidez', eur(total));
+
+  mkChart('c-caja', 'bar', accounts.map(a => a.cuenta || a.banco || 'Cuenta'), [{ data: accounts.map(a => Number(a.saldo)||0), backgroundColor: '#1B5FA8', borderRadius: 5 }]);
+  const accRows = accounts.map((a, idx) => `<tr><td><input value="${a.banco || ''}" onchange="setManualTreasuryAccount('${emp}',${idx},'banco',this.value)" style="width:110px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"> <input value="${a.cuenta || ''}" onchange="setManualTreasuryAccount('${emp}',${idx},'cuenta',this.value)" style="width:190px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"></td><td class="tr"><input type="number" value="${Number(a.saldo)||0}" onchange="setManualTreasuryAccount('${emp}',${idx},'saldo',this.value)" style="width:120px;text-align:right;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"> €</td><td style="font-size:12px;color:var(--text3)">Manual · saldo bancario actual</td><td><button class="eb" onclick="removeManualTreasuryAccount('${emp}',${idx})" style="font-size:11px;padding:5px 8px">Eliminar</button></td></tr>`).join('');
+  document.getElementById('tb-tes').innerHTML = [
+    `<tr><td colspan="4"><div class="al" style="background:var(--accent-light);color:#0C3E78;border:1px solid rgba(27,95,168,.15)">ℹ️ Para ${emp}, Tesorería es el saldo bancario real que introduzcas aquí. Los ingresos y gastos se muestran debajo solo como movimiento operativo del mes.</div></td></tr>`,
+    accRows,
+    `<tr><td colspan="4"><button class="eb" onclick="addManualTreasuryAccount('${emp}')">+ Añadir cuenta bancaria</button></td></tr>`,
+    `<tr><td style="font-weight:700">Total tesorería bancaria</td><td class="tr" style="font-weight:800">${eur(total)}</td><td style="font-size:12px;color:var(--text3)">suma de saldos bancarios</td><td><span class="pill pg">Fotografía</span></td></tr>`,
+    `<tr><td style="font-weight:600">Ingresos del mes</td><td class="tr" style="font-weight:700;color:var(--green)">${eur(r.ingresos)}</td><td style="font-size:12px;color:var(--text3)">Sección Ingresos · ${mes || 'sin mes'}</td><td><span class="pill pg">Movimiento</span></td></tr>`,
+    `<tr><td style="font-weight:600">Gastos del mes</td><td class="tr" style="font-weight:700;color:var(--red)">${eur(r.gastos)}</td><td style="font-size:12px;color:var(--text3)">Gastos Generales · columna Empresa</td><td><span class="pill pr">Movimiento</span></td></tr>`,
+    `<tr><td style="font-weight:700">Balance operativo del mes</td><td class="tr" style="font-weight:800;color:${r.balance>=0?'var(--green)':'var(--red)'}">${r.balance>=0?'+':''}${eur(r.balance)}</td><td style="font-size:12px;color:var(--text3)">no se usa como saldo de tesorería</td><td><span class="pill ${r.balance>=0?'pg':'pr'}">Resultado</span></td></tr>`
+  ].join('');
+}
+
+function renderTesGlobal() {
+  setTesLabels('global');
+  const corp = selectedCorpTesRecord();
+  const corpCaja = corp ? (Number(corp.total_caja) || 0) : 0;
+  const bridge = manualTreasuryTotal('Bridge');
+  const vallecas = manualTreasuryTotal('Vallecas Las');
+  const cajaOperativaGlobal = corpCaja + bridge + vallecas;
+  const bankSummary = getBankSummary();
+  const rows = tesoreriaOperativaMensual('Global');
+  const currentMes = document.getElementById('mes-sel')?.value || rows[rows.length-1]?.mes || '';
+  const r = rows.find(x => x.mes === currentMes) || rows[rows.length - 1] || { ingresos:0, gastos:0, balance:0, iva:0 };
+
+  set('t-tot', eur(cajaOperativaGlobal)); setC('t-tot', 'mv'); set('t-dias', 'Corporación B40:N42 + saldos manuales Bridge/Vallecas');
+  set('t-obj', eur(bankSummary.disponibleLineas)); set('t-obj-s', 'Líneas disponibles de Corporación');
+  set('t-ef', (r.balance >= 0 ? '+' : '') + eur(r.balance)); setC('t-ef', 'mv ' + (r.balance >= 0 ? 'up' : 'dn')); set('t-ef-s', 'Ingresos - gastos del mes global');
+  set('t-fi', eur(r.iva)); set('t-fi-s', 'IVA de ingresos del mes global');
+  set('t-bank-disponible', eur(bankSummary.disponibleLineas));
+  set('t-bank-dispuesto', eur(bankSummary.dispuestoLineas));
+  set('t-bank-liquidez', eur(cajaOperativaGlobal + bankSummary.disponibleLineas));
+
+  const parts = [
+    ['Corporación', corpCaja, 'B40:N42 · caja operativa'],
+    ['Bridge', bridge, 'Saldo manual'],
+    ['Vallecas Las', vallecas, 'Saldo manual'],
+  ];
+  mkChart('c-caja', 'bar', parts.map(p=>p[0]), [{ data: parts.map(p=>p[1]), backgroundColor: ['#1B5FA8','#1A9E72','#B87318'], borderRadius: 5 }]);
+  document.getElementById('tb-tes').innerHTML = [
+    ...parts.map(([nombre, importe, origen]) => `<tr><td style="font-weight:600">${nombre}</td><td class="tr" style="font-weight:700">${eur(importe)}</td><td style="font-size:12px;color:var(--text3)">${origen}</td><td><span class="pill pb">Saldo</span></td></tr>`),
+    `<tr><td style="font-weight:700">Caja operativa global</td><td class="tr" style="font-weight:800">${eur(cajaOperativaGlobal)}</td><td style="font-size:12px;color:var(--text3)">saldos reales configurados</td><td><span class="pill pg">Fotografía</span></td></tr>`,
+    `<tr><td style="font-weight:600">Líneas disponibles</td><td class="tr" style="font-weight:700;color:var(--green)">${eur(bankSummary.disponibleLineas)}</td><td style="font-size:12px;color:var(--text3)">Productos bancarios</td><td><span class="pill pz">Potencial</span></td></tr>`,
+    `<tr><td style="font-weight:700">Liquidez potencial global</td><td class="tr" style="font-weight:800">${eur(cajaOperativaGlobal + bankSummary.disponibleLineas)}</td><td style="font-size:12px;color:var(--text3)">caja operativa + líneas disponibles</td><td><span class="pill pg">Total</span></td></tr>`,
+    `<tr><td style="font-weight:600">Movimiento operativo del mes</td><td class="tr" style="font-weight:700;color:${r.balance>=0?'var(--green)':'var(--red)'}">${r.balance>=0?'+':''}${eur(r.balance)}</td><td style="font-size:12px;color:var(--text3)">ingresos - gastos; no sustituye al saldo bancario</td><td><span class="pill ${r.balance>=0?'pg':'pr'}">Movimiento</span></td></tr>`
+  ].join('');
+}
+
+function renderTes() {
+  if (empresaActual === 'Corporacion') return renderTesCorporacion();
+  if (empresaActual === 'Global') return renderTesGlobal();
+  return renderTesManualEmpresa(empresaActual);
 }
 
 function renderProductos() {

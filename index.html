@@ -478,7 +478,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-25 cargado: integracion bancaria Powens via Supabase Edge Function");
+console.log("INDEX FINANCIERO v2026-04-29-26 cargado: Powens Webview con connector_ids/connector_uuids y webhook pendiente");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1540,11 +1540,11 @@ async function createBankConnection() {
 }
 async function completeReturnedBankConnection() {
   const params = new URLSearchParams(window.location.search);
-  if (!params.has('powens_return') && !params.has('code') && !params.has('connection_id') && !params.has('connection_ids')) return;
+  if (!params.has('powens_return') && !params.has('code') && !params.has('connection_id') && !params.has('connection_ids') && !params.has('id_connection')) return;
   try {
     setOBStatus('Completando conexión bancaria de Powens...');
     const code = params.get('code') || '';
-    const connection_id = params.get('connection_id') || '';
+    const connection_id = params.get('connection_id') || params.get('id_connection') || '';
     const connection_ids = params.get('connection_ids') || '';
     const state = params.get('state') || '';
     await openBankingCall('complete_connection', { code, connection_id, connection_ids, state });

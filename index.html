@@ -195,6 +195,26 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
   <div class="card mb">
     <div class="ch" style="align-items:flex-start;gap:14px;flex-wrap:wrap">
       <div>
+        <div class="ct" style="margin:0">Integración bancaria automática</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Conexión PSD2 mediante Powens y Supabase Edge Function. Conecta bancos, sincroniza saldos y descarga movimientos como nuevos pendientes de validar.</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn bg2btn" onclick="loadOpenBankingInstitutions()">Cargar bancos Powens</button>
+        <button class="btn bp" onclick="syncAllBankConnections()">Actualizar bancos</button>
+      </div>
+    </div>
+    <div class="filter-bar" style="margin-top:10px">
+      <select class="sel" id="ob-bank-select"><option value="">Primero carga bancos disponibles</option></select>
+      <select class="sel" id="ob-empresa"><option>Corporacion</option><option>Bridge</option><option>Vallecas Las</option></select>
+      <input class="inp" id="ob-alias" placeholder="Alias cuenta, ej. Caixa Corporación" style="min-width:220px">
+      <button class="btn bg2btn" onclick="createBankConnection()">Conectar banco</button>
+    </div>
+    <div id="ob-status" style="font-size:12px;color:var(--text3);margin-bottom:10px"></div>
+    <div class="tw"><table><thead><tr><th>Banco</th><th>Empresa</th><th>Alias</th><th>Estado</th><th>Consentimiento</th><th>Última sync</th><th>Acciones</th></tr></thead><tbody id="tb-bank-connections"></tbody></table></div>
+  </div>
+  <div class="card mb">
+    <div class="ch" style="align-items:flex-start;gap:14px;flex-wrap:wrap">
+      <div>
         <div class="ct" style="margin:0">Subir movimientos</div>
         <div style="font-size:12px;color:var(--text3);margin-top:4px">Acepta Excel o CSV. Detecta columnas habituales: Fecha, Banco, Cuenta, Concepto/Descripción, Referencia, Importe, Saldo y Empresa.</div>
       </div>
@@ -458,7 +478,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-23 cargado: conciliacion bancaria automatica por reglas de concepto");
+console.log("INDEX FINANCIERO v2026-04-29-25 cargado: integracion bancaria Powens via Supabase Edge Function");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -949,7 +969,7 @@ function setC(id, c) { const e = document.getElementById(id); if (e) e.className
 // ============================================================
 // DATA STORE
 // ============================================================
-let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [], ingresosExternos: [], movimientos: [], reglasBanco: [] };
+let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [], ingresosExternos: [], movimientos: [], reglasBanco: [], bankConnections: [] };
 
 // ============================================================
 // SYNC FROM GOOGLE SHEETS
@@ -1050,7 +1070,7 @@ async function syncSheets() {
 // ============================================================
 async function loadDB() {
   if (!sb) return;
-  const [c, g, f, dv, w, mb, rb] = await Promise.all([
+  const [c, g, f, dv, w, mb, rb, bc] = await Promise.all([
     sb.from('cajas_diarias').select('*').order('fecha'),
     sb.from('gastos').select('*').order('fecha', { ascending: false }),
     sb.from('financiaciones').select('*').order('fecha', { ascending: false }),
@@ -1058,12 +1078,14 @@ async function loadDB() {
     sb.from('trabajadores').select('*').order('nombre'),
     sb.from('movimientos_bancarios').select('*').order('fecha', { ascending: false }),
     sb.from('reglas_conciliacion_bancaria').select('*').eq('activa', true).order('prioridad', { ascending: false }),
+    sb.from('bank_connections').select('*').order('created_at', { ascending: false }),
   ]);
   D.cajas = (c.data || []).filter(esCajaReal); D.gastos = g.data || []; D.fins = f.data || [];
   try { D.tes = JSON.parse(localStorage.getItem('cd_tesoreria_cuentas') || '[]'); } catch (_) { D.tes = []; }
   D.devs = dv.data || []; D.workers = w.data || [];
   D.movimientos = (mb && !mb.error && Array.isArray(mb.data)) ? mb.data : loadBankMovementsLocal();
   D.reglasBanco = (rb && !rb.error && Array.isArray(rb.data)) ? rb.data : loadBankRulesLocal();
+  D.bankConnections = (bc && !bc.error && Array.isArray(bc.data)) ? bc.data : [];
   D.ingresosExternos = await fetchIngresosExternos();
   const ls = localStorage.getItem('cd_last_sync');
   if (ls) set('lsync', 'Última sync: ' + ls);
@@ -1113,7 +1135,7 @@ function esCajaReal(c) {
 
 function renderAll() {
   renderEmpresaBars();
-  renderResumen(); renderTes(); renderProductos(); renderGastos(); renderIngresos(); renderPrev(); renderMovimientos(); renderReglasBancarias();
+  renderResumen(); renderTes(); renderProductos(); renderGastos(); renderIngresos(); renderPrev(); renderMovimientos(); renderReglasBancarias(); renderBankConnections();
   renderFins(); renderDevs(); renderEquipo(); renderObjs();
 }
 
@@ -1444,6 +1466,134 @@ function renderProductos() {
 }
 
 
+
+
+// ============================================================
+// OPEN BANKING / PSD2 VIA POWENS + SUPABASE EDGE FUNCTION
+// ============================================================
+function openBankingFunctionUrl() {
+  const url = localStorage.getItem('cd_url') || '';
+  return url ? url.replace(/\/$/, '') + '/functions/v1/powens-banking' : '';
+}
+async function openBankingCall(action, payload={}) {
+  const endpoint = openBankingFunctionUrl();
+  const key = localStorage.getItem('cd_key') || '';
+  if (!endpoint || !key) throw new Error('Configura Supabase antes de conectar bancos.');
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    body: JSON.stringify({ action, ...payload })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) throw new Error(data.error || data.message || 'Error Powens banking');
+  return data;
+}
+function setOBStatus(msg, kind='info') {
+  const el = document.getElementById('ob-status');
+  if (!el) return;
+  const color = kind === 'err' ? 'var(--red)' : (kind === 'ok' ? 'var(--green)' : 'var(--text3)');
+  el.style.color = color;
+  el.textContent = msg || '';
+}
+async function loadOpenBankingInstitutions() {
+  try {
+    setOBStatus('Cargando conectores bancarios de Powens para España...');
+    const data = await openBankingCall('institutions', { country: 'ES' });
+    const target = ['caixa','caixabank','bbva','sabadell','cajamar','tajamar','laboral','kutxa'];
+    const all = Array.isArray(data.institutions) ? data.institutions : [];
+    const filtered = all.filter(b => target.some(t => normTxt((b.name || '') + ' ' + (b.id || '') + ' ' + (b.uuid || '')).includes(t)));
+    const banks = filtered.length ? filtered : all;
+    const sel = document.getElementById('ob-bank-select');
+    sel.innerHTML = '<option value="">Selecciona banco</option>' + banks.map(b => {
+      const id = b.uuid || b.id;
+      const nm = (b.name || '').replace(/"/g,'&quot;');
+      return `<option value="${id}" data-name="${nm}" data-id-connector="${b.id || ''}">${b.name} · ${b.id || b.uuid}</option>`;
+    }).join('');
+    setOBStatus(`${banks.length} conectores cargados. Selecciona uno para iniciar el Webview de Powens.`, 'ok');
+  } catch (err) {
+    console.error(err);
+    setOBStatus(err.message || String(err), 'err');
+  }
+}
+async function createBankConnection() {
+  try {
+    const sel = document.getElementById('ob-bank-select');
+    const institution_id = sel.value;
+    if (!institution_id) return alert('Selecciona un banco.');
+    const banco = sel.selectedOptions[0]?.dataset?.name || sel.selectedOptions[0]?.textContent || institution_id;
+    const id_connector = sel.selectedOptions[0]?.dataset?.idConnector || '';
+    const empresa = document.getElementById('ob-empresa').value;
+    const alias = document.getElementById('ob-alias').value.trim() || `${banco} · ${empresa}`;
+    setOBStatus('Creando enlace seguro de Powens Webview...');
+    const redirect_url = window.location.origin + window.location.pathname + '?powens_return=1';
+    const data = await openBankingCall('create_connection', { institution_id, id_connector, banco, empresa, alias, redirect_url });
+    if (data.link) {
+      setOBStatus('Redirigiendo a Powens para autorizar el banco...', 'ok');
+      window.location.href = data.link;
+    } else {
+      setOBStatus('Conexión creada, pero Powens no devolvió enlace.', 'err');
+    }
+  } catch (err) {
+    console.error(err);
+    setOBStatus(err.message || String(err), 'err');
+  }
+}
+async function completeReturnedBankConnection() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has('powens_return') && !params.has('code') && !params.has('connection_id') && !params.has('connection_ids')) return;
+  try {
+    setOBStatus('Completando conexión bancaria de Powens...');
+    const code = params.get('code') || '';
+    const connection_id = params.get('connection_id') || '';
+    const connection_ids = params.get('connection_ids') || '';
+    const state = params.get('state') || '';
+    await openBankingCall('complete_connection', { code, connection_id, connection_ids, state });
+    setOBStatus('Conexión bancaria completada. Sincronizando datos...', 'ok');
+    await openBankingCall('sync_all', {});
+    await loadDB();
+    history.replaceState({}, document.title, window.location.pathname);
+  } catch (err) {
+    console.warn(err);
+    setOBStatus('No se pudo completar automáticamente. Entra en Movimientos bancarios y pulsa Actualizar bancos. ' + (err.message || ''), 'err');
+  }
+}
+async function syncBankConnection(id) {
+  try {
+    setOBStatus('Sincronizando banco con Powens...');
+    const data = await openBankingCall('sync_connection', { connection_id: id });
+    setOBStatus(`Sincronizado: ${data.inserted || 0} movimientos procesados.`, 'ok');
+    await loadDB();
+  } catch (err) {
+    console.error(err);
+    setOBStatus(err.message || String(err), 'err');
+  }
+}
+async function syncAllBankConnections() {
+  try {
+    setOBStatus('Sincronizando todas las conexiones Powens...');
+    const data = await openBankingCall('sync_all', {});
+    setOBStatus(`Sincronización completada: ${data.inserted || 0} movimientos procesados.`, 'ok');
+    await loadDB();
+  } catch (err) {
+    console.error(err);
+    setOBStatus(err.message || String(err), 'err');
+  }
+}
+function renderBankConnections() {
+  const tbody = document.getElementById('tb-bank-connections');
+  if (!tbody) return;
+  const rows = D.bankConnections || [];
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text3)">Sin bancos conectados todavía. Carga bancos Powens y crea la conexión Webview.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(c => {
+    const validUntil = c.consent_expires_at ? new Date(c.consent_expires_at).toLocaleDateString('es-ES') : '—';
+    const status = c.status || 'pendiente';
+    const pill = status === 'connected' || status === 'active' ? 'pg' : (status === 'error' ? 'pr' : 'pa');
+    return `<tr><td style="font-weight:600">${c.banco || c.institution_id || 'Banco'}</td><td>${c.empresa || ''}</td><td>${c.alias || ''}</td><td><span class="pill ${pill}">${status}</span></td><td>${validUntil}</td><td>${c.last_sync_at ? new Date(c.last_sync_at).toLocaleString('es-ES') : '—'}</td><td><button class="eb" onclick="syncBankConnection('${c.id}')">Actualizar</button></td></tr>`;
+  }).join('');
+}
 
 // ============================================================
 // MOVIMIENTOS BANCARIOS

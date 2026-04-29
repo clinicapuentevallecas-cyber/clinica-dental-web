@@ -478,7 +478,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-27 cargado: Powens Webview sin preseleccion de conector y webhook pendiente");
+console.log("INDEX FINANCIERO v2026-04-29-28 cargado: ingresos incluye siempre hojas fijas de caja como Enero26 y Powens sin preseleccion");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -530,6 +530,9 @@ function sheetNameToCajaMeta(name, gid) {
   return { name: String(name || '').trim(), gid: String(gid), year, month };
 }
 async function discoverCajaSheets() {
+  // v28: siempre mezcla las hojas fijas conocidas con las detectadas automáticamente.
+  // Motivo: Google pubhtml a veces no lista una pestaña visible/antigua (por ejemplo Enero26),
+  // y si devolvemos solo las detectadas se dejan de sincronizar ingresos de ese mes.
   try {
     const html = await fetchText(pubHtmlUrl());
     const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -547,9 +550,18 @@ async function discoverCajaSheets() {
       const meta = sheetNameToCajaMeta(m[2], m[1]);
       if (meta) found.push(meta);
     }
-    const byKey = new Map();
-    found.forEach(x => byKey.set(`${x.gid}|${x.year}|${x.month}`, x));
-    const arr = Array.from(byKey.values()).sort((a,b) => (a.year - b.year) || (a.month - b.month));
+    const byMonth = new Map();
+    // Primero las conocidas, para garantizar Enero26-Febrero26-Marzo26-Abril26 aunque pubhtml no las devuelva.
+    FALLBACK_CAJA_SHEETS.forEach(x => byMonth.set(`${x.year}|${x.month}`, x));
+    // Después las detectadas, para añadir meses nuevos como Mayo26, Junio26, etc.
+    found.forEach(x => {
+      const key = `${x.year}|${x.month}`;
+      if (!byMonth.has(key)) byMonth.set(key, x);
+    });
+    const arr = Array.from(byMonth.values()).sort((a,b) => (a.year - b.year) || (a.month - b.month));
+    if (found.length && arr.length !== found.length) {
+      console.info('[Caja sheets] Hojas fijas + detectadas:', arr.map(s => `${s.name}(${s.gid})`).join(', '));
+    }
     return arr.length ? arr : FALLBACK_CAJA_SHEETS;
   } catch (err) {
     console.warn('[Caja sheets] No se pudieron detectar automáticamente las pestañas. Uso fallback manual.', err);

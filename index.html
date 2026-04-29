@@ -167,13 +167,13 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     </div>
   </div>
   <div class="metrics">
-    <div class="metric"><div class="ml">Total del mes</div><div class="mv" id="t-tot">—</div><div class="ms" id="t-dias"></div></div>
-    <div class="metric"><div class="ml">Objetivo diario</div><div class="mv" id="t-obj">—</div><div class="ms" id="t-obj-s"></div></div>
-    <div class="metric"><div class="ml">Efectivo</div><div class="mv" id="t-ef">—</div><div class="ms" id="t-ef-s"></div></div>
-    <div class="metric"><div class="ml">Financiado</div><div class="mv" id="t-fi">—</div><div class="ms" id="t-fi-s"></div></div>
+    <div class="metric"><div class="ml" id="t-l-tot">Total del mes</div><div class="mv" id="t-tot">—</div><div class="ms" id="t-dias"></div></div>
+    <div class="metric"><div class="ml" id="t-l-obj">Objetivo diario</div><div class="mv" id="t-obj">—</div><div class="ms" id="t-obj-s"></div></div>
+    <div class="metric"><div class="ml" id="t-l-ef">Efectivo</div><div class="mv" id="t-ef">—</div><div class="ms" id="t-ef-s"></div></div>
+    <div class="metric"><div class="ml" id="t-l-fi">Financiado</div><div class="mv" id="t-fi">—</div><div class="ms" id="t-fi-s"></div></div>
   </div>
-  <div class="card mb"><div class="ct">Distribución por cuenta</div><div style="height:230px;position:relative"><canvas id="c-caja"></canvas></div></div>
-  <div class="card mb"><div class="ct">Detalle de cuentas del mes</div><div class="tw"><table><thead><tr><th>Cuenta</th><th class="tr">Importe</th><th>Origen</th><th>Estado</th></tr></thead><tbody id="tb-tes"></tbody></table></div></div>
+  <div class="card mb"><div class="ct" id="t-chart-title">Distribución por cuenta</div><div style="height:230px;position:relative"><canvas id="c-caja"></canvas></div></div>
+  <div class="card mb"><div class="ct" id="t-table-title">Detalle de cuentas del mes</div><div class="tw"><table><thead><tr><th>Concepto</th><th class="tr">Importe</th><th>Origen</th><th>Estado</th></tr></thead><tbody id="tb-tes"></tbody></table></div></div>
   <div class="card">
     <div class="ct">Productos bancarios y liquidez potencial</div>
     <div class="metrics m3" style="margin-bottom:0">
@@ -400,7 +400,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-16 cargado: modulo ingresos con cajas Corporacion y CSV Bridge/Vallecas");
+console.log("INDEX FINANCIERO v2026-04-29-17 cargado: tesoreria Bridge/Vallecas calcula ingresos menos gastos por empresa");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1106,9 +1106,100 @@ function renderResumen() {
     [{ data: rm.map(m => (pm[m]||0) - (gm[m]||0)), backgroundColor: rm.map(m => (pm[m]||0)-(gm[m]||0) >= 0 ? '#1A9E72' : '#D4502A'), borderRadius: 5 }]);
 }
 
-function renderTes() {
+function mesKeyFromFecha(fecha) {
+  const f = String(fecha || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(f) ? f.slice(0, 7) : '';
+}
+
+function tesoreriaOperativaMensual() {
+  const ingresos = ingresosFiltradosEmpresa();
+  const gastos = filtrarEmp(D.gastos || [], 'empresa');
+  const mesesSet = new Set();
+  ingresos.forEach(i => { const m = mesKeyFromFecha(i.fecha); if (m) mesesSet.add(m); });
+  gastos.forEach(g => { const m = mesKeyFromFecha(g.fecha); if (m) mesesSet.add(m); });
+  const meses = [...mesesSet].sort();
+  return meses.map(m => {
+    const ingresosMes = ingresos.filter(i => mesKeyFromFecha(i.fecha) === m);
+    const gastosMes = gastos.filter(g => mesKeyFromFecha(g.fecha) === m);
+    const totalIngresos = ingresosMes.reduce((sum, i) => sum + (Number(i.importe) || 0), 0);
+    const totalGastos = gastosMes.reduce((sum, g) => sum + (Number(g.importe) || 0), 0);
+    const ivaIngresos = ingresosMes.reduce((sum, i) => sum + (Number(i.iva) || 0), 0);
+    const balance = totalIngresos - totalGastos;
+    return { mes: m, ingresos: totalIngresos, gastos: totalGastos, balance, iva: ivaIngresos, ingresosCount: ingresosMes.length, gastosCount: gastosMes.length };
+  });
+}
+
+function setTesLabels(mode) {
+  if (mode === 'operativa') {
+    set('t-l-tot', 'Balance del mes');
+    set('t-l-obj', 'Ingresos');
+    set('t-l-ef', 'Gastos');
+    set('t-l-fi', 'IVA ingresos');
+    set('t-chart-title', 'Ingresos vs gastos');
+    set('t-table-title', 'Detalle operativo del mes');
+  } else {
+    set('t-l-tot', 'Total del mes');
+    set('t-l-obj', 'Objetivo diario');
+    set('t-l-ef', 'Efectivo');
+    set('t-l-fi', 'Financiado');
+    set('t-chart-title', 'Distribución por cuenta');
+    set('t-table-title', 'Detalle de cuentas del mes');
+  }
+}
+
+function renderTesOperativa() {
+  setTesLabels('operativa');
   const sel = document.getElementById('mes-sel');
-  const tesBase = (D.tes || []).filter(r => empresaActual === 'Global' || (r.empresa || '').toLowerCase().includes(empresaActual.toLowerCase())).sort((a,b) => String(a.mes).localeCompare(String(b.mes)));
+  const rows = tesoreriaOperativaMensual();
+  const prevMes = sel.value;
+  sel.innerHTML = '';
+  rows.forEach(r => {
+    const o = document.createElement('option');
+    o.value = r.mes;
+    o.textContent = `${M[+r.mes.slice(5)-1]} ${r.mes.slice(0,4)} · balance ${eur(r.balance)}`;
+    sel.appendChild(o);
+  });
+  const mes = rows.some(r => r.mes === prevMes) ? prevMes : (rows[rows.length - 1]?.mes || '');
+  const bankSummary = getBankSummary();
+  if (!mes) {
+    set('t-tot', eur(0)); setC('t-tot', 'mv');
+    set('t-dias', 'Sin ingresos o gastos con fecha para ' + empresaActual);
+    set('t-obj', eur(0)); set('t-obj-s', '0 ingresos');
+    set('t-ef', eur(0)); set('t-ef-s', '0 gastos');
+    set('t-fi', eur(0)); set('t-fi-s', 'IVA de facturas de ingresos');
+    document.getElementById('tb-tes').innerHTML = '<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:24px">Sin datos operativos para esta empresa. Revisa que los ingresos y los gastos tengan la columna Empresa informada.</td></tr>';
+    mkChart('c-caja', 'bar', [], [{ data: [] }]);
+    set('t-bank-disponible', eur(bankSummary.disponibleLineas));
+    set('t-bank-dispuesto', eur(bankSummary.dispuestoLineas));
+    set('t-bank-liquidez', eur(bankSummary.disponibleLineas));
+    return;
+  }
+  sel.value = mes;
+  const r = rows.find(x => x.mes === mes) || { ingresos:0, gastos:0, balance:0, iva:0, ingresosCount:0, gastosCount:0 };
+  set('t-tot', (r.balance >= 0 ? '+' : '') + eur(r.balance)); setC('t-tot', 'mv ' + (r.balance >= 0 ? 'up' : 'dn'));
+  set('t-dias', 'Ingresos menos gastos del mes');
+  set('t-obj', eur(r.ingresos)); set('t-obj-s', `${r.ingresosCount} registro(s) de ingresos`);
+  set('t-ef', eur(r.gastos)); set('t-ef-s', `${r.gastosCount} registro(s) de gastos generales`);
+  set('t-fi', eur(r.iva)); set('t-fi-s', 'IVA de ingresos para futuras declaraciones');
+  set('t-bank-disponible', eur(bankSummary.disponibleLineas));
+  set('t-bank-dispuesto', eur(bankSummary.dispuestoLineas));
+  set('t-bank-liquidez', eur(r.balance + bankSummary.disponibleLineas));
+
+  mkChart('c-caja', 'bar', ['Ingresos', 'Gastos', 'Balance'], [{ data: [r.ingresos, r.gastos, r.balance], backgroundColor: ['#1A9E72', '#D4502A', r.balance >= 0 ? '#1B5FA8' : '#B87318'], borderRadius: 5 }]);
+  document.getElementById('tb-tes').innerHTML = [
+    `<tr><td style="font-weight:600">Ingresos</td><td class="tr" style="font-weight:700;color:var(--green)">${eur(r.ingresos)}</td><td style="font-size:12px;color:var(--text3)">Sección Ingresos · empresa ${empresaActual}</td><td><span class="pill pg">Suma</span></td></tr>`,
+    `<tr><td style="font-weight:600">Gastos</td><td class="tr" style="font-weight:700;color:var(--red)">${eur(r.gastos)}</td><td style="font-size:12px;color:var(--text3)">Excel Gastos generales · columna Empresa</td><td><span class="pill pr">Resta</span></td></tr>`,
+    `<tr><td style="font-weight:700">Balance operativo</td><td class="tr" style="font-weight:800;color:${r.balance>=0?'var(--green)':'var(--red)'}">${r.balance>=0?'+':''}${eur(r.balance)}</td><td style="font-size:12px;color:var(--text3)">Ingresos - gastos</td><td><span class="pill ${r.balance>=0?'pg':'pr'}">Resultado</span></td></tr>`,
+    `<tr><td style="font-weight:500">IVA ingresos</td><td class="tr" style="font-weight:600">${eur(r.iva)}</td><td style="font-size:12px;color:var(--text3)">Facturas con IVA</td><td><span class="pill pb">Declaración</span></td></tr>`
+  ].join('');
+}
+
+function renderTes() {
+  const useCuentaMode = empresaActual === 'Corporacion' && (D.tes || []).some(r => (r.empresa || 'Corporacion').toLowerCase().includes('corporacion'));
+  if (!useCuentaMode) return renderTesOperativa();
+  setTesLabels('cuentas');
+  const sel = document.getElementById('mes-sel');
+  const tesBase = (D.tes || []).filter(r => (r.empresa || 'Corporacion').toLowerCase().includes('corporacion')).sort((a,b) => String(a.mes).localeCompare(String(b.mes)));
   const meses = tesBase.map(r => r.mes);
   const prevMes = sel.value;
   sel.innerHTML = '';
@@ -1139,7 +1230,7 @@ function renderTes() {
   // Traspaso: movimiento interno hacia/desde linea de credito. No afecta a tesoreria operativa.
   const bankSummary = getBankSummary();
 
-  set('t-tot', eur(totalTes)); set('t-dias', 'Total cuadro B40:N42');
+  set('t-tot', eur(totalTes)); setC('t-tot', 'mv'); set('t-dias', 'Total cuadro B40:N42');
   set('t-obj', eur(totalCaja)); set('t-obj-s', 'Caja + tarjetas + transferencia + FF');
   set('t-ef', eur(efectivo)); set('t-ef-s', totalTes > 0 ? ((efectivo/totalTes)*100).toFixed(1) + '% del total' : '');
   set('t-fi', eur(ff)); set('t-fi-s', totalTes > 0 ? ((ff/totalTes)*100).toFixed(1) + '% del total' : '');

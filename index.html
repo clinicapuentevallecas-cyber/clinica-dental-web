@@ -126,6 +126,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
   <div class="nav-item" onclick="nav('prevision',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12l4-4 3 2 5-6" stroke-linecap="round"/></svg>Previsión</div>
   <div class="nav-s">Operativa</div>
   <div class="nav-item" onclick="nav('productos',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M4 7h8M4 10h5" stroke-linecap="round"/></svg>Productos bancarios</div>
+  <div class="nav-item" onclick="nav('movimientos',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h12M2 12h12" stroke-linecap="round"/><path d="M4 2v12" stroke-linecap="round"/></svg>Movimientos bancarios</div>
   <div class="nav-item" onclick="nav('financiaciones',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 2" stroke-linecap="round"/></svg>Financiaciones</div>
   <div class="nav-item" onclick="nav('devoluciones',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8l3-3v2h5a2 2 0 0 1 0 4H8" stroke-linecap="round"/></svg>Devoluciones</div>
   <div class="nav-item" onclick="nav('equipo',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="5" r="2.5"/><path d="M1 13c0-2.8 2.2-5 5-5s5 2.2 5 5"/></svg>Equipo</div>
@@ -163,7 +164,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div><div class="pt">Tesorería — Cuentas</div><div class="ps">Fotografía del dinero real disponible: saldos bancarios, efectivo y líneas disponibles. El movimiento operativo se muestra separado.</div></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <div id="empresa-bar-t" class="empresa-bar" style="margin-bottom:0"></div>
-      <select class="sel" id="mes-sel" onchange="renderTes()"></select>
+      <span class="filter-tag" id="tes-snapshot-chip">Última posición real</span>
     </div>
   </div>
   <div class="metrics">
@@ -181,6 +182,47 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
       <div class="metric"><div class="ml">Dispuesto en líneas</div><div class="mv" id="t-bank-dispuesto">—</div><div class="ms">Riesgo bancario usado</div></div>
       <div class="metric"><div class="ml">Caja operativa + disponible</div><div class="mv" id="t-bank-liquidez">—</div><div class="ms">Caja operativa + líneas disponibles</div></div>
     </div>
+  </div>
+</div>
+
+
+<!-- MOVIMIENTOS BANCARIOS -->
+<div class="page" id="page-movimientos">
+  <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+    <div><div class="pt">Movimientos bancarios</div><div class="ps">Subida diaria de extractos bancarios. Los movimientos nuevos quedan pendientes de validar y pueden marcarse con incidencia.</div></div>
+    <div id="empresa-bar-m" class="empresa-bar" style="margin-bottom:0"></div>
+  </div>
+  <div class="card mb">
+    <div class="ch" style="align-items:flex-start;gap:14px;flex-wrap:wrap">
+      <div>
+        <div class="ct" style="margin:0">Subir movimientos</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Acepta Excel o CSV. Detecta columnas habituales: Fecha, Banco, Cuenta, Concepto/Descripción, Referencia, Importe, Saldo y Empresa.</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <input id="bank-file" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleBankMovementsFile(this.files[0])">
+        <button class="btn bp" onclick="document.getElementById('bank-file').click()">Subir Excel/CSV</button>
+        <button class="btn bg2btn" onclick="exportBankMovementsCSV()">Exportar CSV</button>
+      </div>
+    </div>
+    <div id="bank-upload-result" style="margin-top:12px"></div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="ml">Movimientos</div><div class="mv" id="mb-total">—</div><div class="ms" id="mb-total-s"></div></div>
+    <div class="metric"><div class="ml">Pendientes validar</div><div class="mv dn" id="mb-pend">—</div><div class="ms">Nuevos o no revisados</div></div>
+    <div class="metric"><div class="ml">Validados</div><div class="mv up" id="mb-val">—</div><div class="ms">Movimientos revisados</div></div>
+    <div class="metric"><div class="ml">Incidencias</div><div class="mv dn" id="mb-inc">—</div><div class="ms">Movimientos para revisar</div></div>
+  </div>
+  <div class="g2 mb">
+    <div class="card"><div class="ct">Validación por estado</div><div style="height:220px;position:relative"><canvas id="c-mov-estados"></canvas></div></div>
+    <div class="card"><div class="ct">Posición bancaria validada</div><div class="ps" style="margin-bottom:8px">Suma del último saldo validado por banco/cuenta. Sirve para contrastar la fotografía de Tesorería.</div><div style="height:220px;position:relative"><canvas id="c-mov-saldos"></canvas></div></div>
+  </div>
+  <div class="card">
+    <div class="ch" style="gap:10px;flex-wrap:wrap">
+      <input class="inp" id="mb-q" placeholder="Buscar concepto, banco, cuenta..." oninput="renderMovimientos()">
+      <select class="sel" id="mb-estado" onchange="renderMovimientos()"><option value="all">Todos los estados</option><option value="pendiente">Pendientes</option><option value="nuevo">Nuevos</option><option value="validado">Validados</option><option value="incidencia">Con incidencia</option></select>
+      <span class="filter-tag" id="mb-filter-info"></span>
+    </div>
+    <div class="tw"><table><thead><tr><th>Fecha</th><th>Empresa</th><th>Banco / cuenta</th><th>Concepto</th><th class="tr">Importe</th><th class="tr">Saldo</th><th>Nuevo</th><th>Validado</th><th>Incidencia</th><th>Nota</th></tr></thead><tbody id="tb-movimientos"></tbody></table></div>
   </div>
 </div>
 
@@ -400,7 +442,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-18 cargado: tesoreria como fotografia bancaria y resumen operativo separado");
+console.log("INDEX FINANCIERO v2026-04-29-19 cargado: tesoreria sin selector historico y movimientos bancarios operativos");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -872,7 +914,7 @@ function setC(id, c) { const e = document.getElementById(id); if (e) e.className
 // ============================================================
 // DATA STORE
 // ============================================================
-let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [], ingresosExternos: [] };
+let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [], ingresosExternos: [], movimientos: [] };
 
 // ============================================================
 // SYNC FROM GOOGLE SHEETS
@@ -966,16 +1008,18 @@ async function syncSheets() {
 // ============================================================
 async function loadDB() {
   if (!sb) return;
-  const [c, g, f, dv, w] = await Promise.all([
+  const [c, g, f, dv, w, mb] = await Promise.all([
     sb.from('cajas_diarias').select('*').order('fecha'),
     sb.from('gastos').select('*').order('fecha', { ascending: false }),
     sb.from('financiaciones').select('*').order('fecha', { ascending: false }),
     sb.from('devoluciones').select('*').order('fecha_solicitud', { ascending: false }),
     sb.from('trabajadores').select('*').order('nombre'),
+    sb.from('movimientos_bancarios').select('*').order('fecha', { ascending: false }),
   ]);
   D.cajas = (c.data || []).filter(esCajaReal); D.gastos = g.data || []; D.fins = f.data || [];
   try { D.tes = JSON.parse(localStorage.getItem('cd_tesoreria_cuentas') || '[]'); } catch (_) { D.tes = []; }
   D.devs = dv.data || []; D.workers = w.data || [];
+  D.movimientos = (mb && !mb.error && Array.isArray(mb.data)) ? mb.data : loadBankMovementsLocal();
   D.ingresosExternos = await fetchIngresosExternos();
   const ls = localStorage.getItem('cd_last_sync');
   if (ls) set('lsync', 'Última sync: ' + ls);
@@ -1000,7 +1044,7 @@ async function setEmpresa(emp) {
 }
 
 function renderEmpresaBars() {
-  ['empresa-bar-r','empresa-bar-t','empresa-bar-g','empresa-bar-i','empresa-bar-p'].forEach(id => {
+  ['empresa-bar-r','empresa-bar-t','empresa-bar-g','empresa-bar-i','empresa-bar-p','empresa-bar-m'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.innerHTML = EMPRESAS.map(e =>
@@ -1025,7 +1069,7 @@ function esCajaReal(c) {
 
 function renderAll() {
   renderEmpresaBars();
-  renderResumen(); renderTes(); renderProductos(); renderGastos(); renderIngresos(); renderPrev();
+  renderResumen(); renderTes(); renderProductos(); renderGastos(); renderIngresos(); renderPrev(); renderMovimientos();
   renderFins(); renderDevs(); renderEquipo(); renderObjs();
 }
 
@@ -1175,20 +1219,12 @@ function tesoreriaOperativaMensual(emp = empresaActual) {
     return { mes: m, ingresos: totalIngresos, gastos: totalGastos, balance, iva: ivaIngresos, ingresosCount: ingresosMes.length, gastosCount: gastosMes.length };
   });
 }
-function selectedOperativeMonth(rows) {
-  const sel = document.getElementById('mes-sel');
-  const prev = sel?.value || '';
-  if (!sel) return rows[rows.length - 1]?.mes || '';
-  sel.innerHTML = '';
-  rows.forEach(r => {
-    const o = document.createElement('option');
-    o.value = r.mes;
-    o.textContent = `${M[+r.mes.slice(5)-1]} ${r.mes.slice(0,4)} · mov. ${eur(r.balance)}`;
-    sel.appendChild(o);
-  });
-  const mes = rows.some(r => r.mes === prev) ? prev : (rows[rows.length - 1]?.mes || '');
-  if (mes) sel.value = mes;
-  return mes;
+function latestOperativeMonth(rows) {
+  const sorted = (rows || []).slice().sort((a,b) => String(a.mes).localeCompare(String(b.mes)));
+  return sorted[sorted.length - 1]?.mes || '';
+}
+function setTesSnapshotChip(text) {
+  set('tes-snapshot-chip', text || 'Última posición real');
 }
 
 function setTesLabels(mode) {
@@ -1220,25 +1256,15 @@ function corpTesRecords() {
   return (D.tes || []).filter(r => normTxt(r.empresa || 'Corporacion').includes('corporacion')).sort((a,b) => String(a.mes).localeCompare(String(b.mes)));
 }
 function selectedCorpTesRecord() {
-  const sel = document.getElementById('mes-sel');
   const tesBase = corpTesRecords();
-  const prevMes = sel?.value || '';
-  if (sel) {
-    sel.innerHTML = '';
-    tesBase.forEach(r => {
-      const o = document.createElement('option');
-      o.value = r.mes;
-      o.textContent = `${M[+r.mes.slice(5)-1]} ${r.mes.slice(0,4)} · caja ${eur(Number(r.total_caja)||0)}`;
-      sel.appendChild(o);
-    });
-  }
-  const meses = tesBase.map(r => r.mes);
-  const mes = meses.includes(prevMes) ? prevMes : (meses[meses.length - 1] || '');
-  if (sel && mes) sel.value = mes;
-  return tesBase.find(r => r.mes === mes) || null;
+  const latest = tesBase[tesBase.length - 1] || null;
+  if (latest?.mes) setTesSnapshotChip('Posición real: ' + M[+latest.mes.slice(5)-1] + ' ' + latest.mes.slice(0,4));
+  else setTesSnapshotChip('Sin posición real');
+  return latest;
 }
 
 function renderTesSinDatos(message) {
+  setTesSnapshotChip('Sin posición real');
   set('t-tot', eur(0)); setC('t-tot', 'mv'); set('t-dias', message || 'Sin saldos bancarios configurados');
   set('t-obj', eur(0)); set('t-obj-s', ''); set('t-ef', eur(0)); set('t-ef-s', ''); set('t-fi', eur(0)); set('t-fi-s', '');
   document.getElementById('tb-tes').innerHTML = `<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:24px">${message || 'Sin datos de tesorería.'}</td></tr>`;
@@ -1289,10 +1315,11 @@ function renderTesCorporacion() {
 function renderTesManualEmpresa(emp) {
   setTesLabels('manual');
   const rows = tesoreriaOperativaMensual(emp);
-  const mes = selectedOperativeMonth(rows);
-  const r = rows.find(x => x.mes === mes) || { ingresos:0, gastos:0, balance:0, iva:0, ingresosCount:0, gastosCount:0 };
   const accounts = getManualTreasuryAccounts(emp);
   const total = accounts.reduce((s,a)=>s+(Number(a.saldo)||0),0);
+  const mes = latestOperativeMonth(rows);
+  setTesSnapshotChip(total ? 'Saldo actual manual' : 'Sin saldo bancario real');
+  const r = rows.find(x => x.mes === mes) || rows[rows.length - 1] || { ingresos:0, gastos:0, balance:0, iva:0, ingresosCount:0, gastosCount:0 };
 
   set('t-tot', eur(total)); setC('t-tot', 'mv'); set('t-dias', total ? 'Saldos bancarios introducidos manualmente' : 'Introduce saldos bancarios reales para esta empresa');
   set('t-obj', eur(r.ingresos)); set('t-obj-s', `${r.ingresosCount} ingreso(s) del mes`);
@@ -1322,7 +1349,8 @@ function renderTesGlobal() {
   const cajaOperativaGlobal = corpCaja + bridge + vallecas;
   const bankSummary = getBankSummary();
   const rows = tesoreriaOperativaMensual('Global');
-  const currentMes = document.getElementById('mes-sel')?.value || rows[rows.length-1]?.mes || '';
+  const currentMes = latestOperativeMonth(rows);
+  setTesSnapshotChip(corp?.mes ? 'Posición real: ' + M[+corp.mes.slice(5)-1] + ' ' + corp.mes.slice(0,4) : 'Posición real global');
   const r = rows.find(x => x.mes === currentMes) || rows[rows.length - 1] || { ingresos:0, gastos:0, balance:0, iva:0 };
 
   set('t-tot', eur(cajaOperativaGlobal)); setC('t-tot', 'mv'); set('t-dias', 'Corporación B40:N42 + saldos manuales Bridge/Vallecas');
@@ -1369,6 +1397,179 @@ function renderProductos() {
     const pct = Math.max(0, Math.min(100, p.usoPct || 0));
     return `<tr><td style="font-weight:500">${p.banco}</td><td>${p.producto}</td><td class="tr" style="font-weight:600">${eur(p.limite)}</td><td class="tr"><input value="${p.disponible || 0}" onchange="setManualBankDisponible('${p.id}', this.value)" title="Disponible, no dispuesto" style="width:90px;text-align:right;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"> €</td><td class="tr" style="font-weight:600;color:var(--red)">${eur(p.dispuesto)}</td><td><div style="width:120px;background:var(--bg2);border-radius:999px;overflow:hidden;height:8px;margin-bottom:4px"><div style="width:${pct}%;height:8px;background:${pct>80?'#D4502A':pct>50?'#B87318':'#1A9E72'}"></div></div><span style="font-size:11px;color:var(--text3)">${pct.toFixed(1)}% usado</span></td><td style="font-size:12px;color:var(--text3)">${p.origenDato || p.origen}${p.origenDato && p.origenDato.startsWith('Manual') ? ` <button onclick="clearManualBankDisponible('${p.id}')" style="border:0;background:transparent;color:var(--accent);cursor:pointer;font-size:11px">usar Excel</button>` : ''}</td></tr>`;
   }).join('');
+}
+
+
+
+// ============================================================
+// MOVIMIENTOS BANCARIOS
+// ============================================================
+function bankMoveKey(m) {
+  return [m.empresa || '', m.fecha || '', m.banco || '', m.cuenta || '', m.concepto || '', m.referencia || '', Number(m.importe)||0, Number(m.saldo)||0]
+    .map(x => normTxt(String(x))).join('|');
+}
+function loadBankMovementsLocal() {
+  try { return JSON.parse(localStorage.getItem('bank_movimientos') || '[]'); } catch (_) { return []; }
+}
+function saveBankMovementsLocal() {
+  localStorage.setItem('bank_movimientos', JSON.stringify(D.movimientos || []));
+}
+async function saveBankMovementsSupabase() {
+  saveBankMovementsLocal();
+  if (!sb || !(D.movimientos || []).length) return;
+  try {
+    const { error } = await sb.from('movimientos_bancarios').upsert(D.movimientos, { onConflict: 'id' });
+    if (error) console.warn('[Movimientos bancarios] No se pudieron guardar en Supabase. Uso localStorage.', error.message);
+  } catch (err) { console.warn('[Movimientos bancarios] Tabla no disponible. Uso localStorage.', err.message || err); }
+}
+function pickAny(row, names) {
+  const keys = Object.keys(row || {});
+  for (const n of names) {
+    const target = normTxt(n);
+    const k = keys.find(x => normTxt(x) === target) || keys.find(x => normTxt(x).includes(target));
+    if (k && row[k] != null && row[k] !== '') return row[k];
+  }
+  return '';
+}
+function excelDateToISO(v) {
+  if (v instanceof Date) return v.toISOString().slice(0,10);
+  if (typeof v === 'number' && v > 20000 && v < 80000) {
+    const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+    return d.toISOString().slice(0,10);
+  }
+  return fixDate(v) || String(v || '').slice(0,10);
+}
+function inferEmpresaMovimiento(row, fileName) {
+  const e = String(pickAny(row, ['Empresa', 'Sociedad', 'Clinica']) || '').trim();
+  if (e) return e;
+  const f = normTxt(fileName || '');
+  if (f.includes('bridge')) return 'Bridge';
+  if (f.includes('vallecas')) return 'Vallecas Las';
+  return empresaActual !== 'Global' ? empresaActual : 'Corporacion';
+}
+function normalizeBankMovement(row, fileName) {
+  const fecha = excelDateToISO(pickAny(row, ['Fecha', 'Fecha valor', 'Fecha operación', 'F. operación', 'Date']));
+  const importe = parseNum(pickAny(row, ['Importe', 'Importe EUR', 'Movimiento', 'Amount', 'Cargo/Abono']));
+  const saldo = parseNum(pickAny(row, ['Saldo', 'Balance', 'Saldo contable', 'Saldo disponible']));
+  const concepto = String(pickAny(row, ['Concepto', 'Descripción', 'Descripcion', 'Detalle', 'Movimiento', 'Narrativa']) || '').trim();
+  if (!fecha || (!concepto && Math.abs(importe) < 0.0001 && Math.abs(saldo) < 0.0001)) return null;
+  const m = {
+    id: '',
+    empresa: inferEmpresaMovimiento(row, fileName),
+    fecha,
+    banco: String(pickAny(row, ['Banco', 'Entidad']) || '').trim(),
+    cuenta: String(pickAny(row, ['Cuenta', 'IBAN', 'Número cuenta', 'Num cuenta']) || '').trim(),
+    concepto,
+    referencia: String(pickAny(row, ['Referencia', 'Ref', 'Factura', 'Documento']) || '').trim(),
+    forma_pago: String(pickAny(row, ['Forma de pago', 'Tipo', 'Canal']) || '').trim(),
+    importe,
+    saldo,
+    estado_validacion: 'pendiente',
+    validado: false,
+    es_nuevo: true,
+    incidencia: false,
+    nota_incidencia: '',
+    archivo_origen: fileName || '',
+    uploaded_at: new Date().toISOString()
+  };
+  m.id = 'mb_' + btoa(unescape(encodeURIComponent(bankMoveKey(m)))).replace(/[^a-zA-Z0-9]/g,'').slice(0,42);
+  return m;
+}
+async function handleBankMovementsFile(file) {
+  if (!file) return;
+  try {
+    set('bank-upload-result', '<div class="al"><div class="sp"></div> Procesando movimientos...</div>');
+    const XLSX = await loadXLSX();
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+    const headerIdx = raw.findIndex(r => (r || []).some(c => normTxt(c).includes('fecha')) && (r || []).some(c => normTxt(c).includes('importe') || normTxt(c).includes('saldo')));
+    if (headerIdx < 0) throw new Error('No he encontrado una fila de cabecera con Fecha e Importe/Saldo');
+    const headers = raw[headerIdx].map((h, i) => String(h || ('Columna ' + (i+1))).trim());
+    const rows = raw.slice(headerIdx + 1).map(arr => {
+      const o = {}; headers.forEach((h, i) => { o[h] = arr[i]; }); return o;
+    });
+    const nuevos = rows.map(r => normalizeBankMovement(r, file.name)).filter(Boolean);
+    const existing = new Map((D.movimientos || []).map(m => [bankMoveKey(m), m]));
+    let added = 0;
+    nuevos.forEach(m => {
+      const key = bankMoveKey(m);
+      if (!existing.has(key)) { existing.set(key, m); added++; }
+    });
+    D.movimientos = Array.from(existing.values()).sort((a,b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.uploaded_at).localeCompare(String(a.uploaded_at)));
+    await saveBankMovementsSupabase();
+    set('bank-upload-result', `<div class="al as2">✓ ${added} movimiento(s) nuevo(s) añadido(s). ${nuevos.length - added} duplicado(s) descartado(s). Quedan pendientes de validar.</div>`);
+    renderMovimientos();
+  } catch (err) {
+    set('bank-upload-result', `<div class="al ae">❌ Error al importar movimientos: ${err.message}</div>`);
+  } finally {
+    const inp = document.getElementById('bank-file'); if (inp) inp.value = '';
+  }
+}
+function filterBankMovements() {
+  const q = normTxt(document.getElementById('mb-q')?.value || '');
+  const st = document.getElementById('mb-estado')?.value || 'all';
+  let rows = filterEmpresaFor(D.movimientos || [], empresaActual, 'empresa');
+  if (q) rows = rows.filter(m => normTxt([m.fecha,m.empresa,m.banco,m.cuenta,m.concepto,m.referencia,m.archivo_origen].join(' ')).includes(q));
+  if (st === 'pendiente') rows = rows.filter(m => !m.validado);
+  if (st === 'nuevo') rows = rows.filter(m => m.es_nuevo);
+  if (st === 'validado') rows = rows.filter(m => m.validado);
+  if (st === 'incidencia') rows = rows.filter(m => m.incidencia);
+  return rows;
+}
+function setMovimientoField(id, field, value) {
+  const m = (D.movimientos || []).find(x => x.id === id);
+  if (!m) return;
+  if (['validado','incidencia','es_nuevo'].includes(field)) m[field] = !!value;
+  else m[field] = value;
+  if (field === 'validado' && value) { m.estado_validacion = 'validado'; m.es_nuevo = false; }
+  if (field === 'validado' && !value) m.estado_validacion = 'pendiente';
+  saveBankMovementsSupabase();
+  renderMovimientos();
+}
+function validatedBankPosition(rows) {
+  const latest = new Map();
+  (rows || []).filter(m => m.validado && Number.isFinite(Number(m.saldo))).forEach(m => {
+    const k = `${m.empresa || ''}|${m.banco || ''}|${m.cuenta || ''}`;
+    const prev = latest.get(k);
+    if (!prev || String(m.fecha).localeCompare(String(prev.fecha)) >= 0) latest.set(k, m);
+  });
+  return Array.from(latest.values());
+}
+function renderMovimientos() {
+  const rows = filterBankMovements();
+  const all = filterEmpresaFor(D.movimientos || [], empresaActual, 'empresa');
+  const pend = all.filter(m => !m.validado).length;
+  const val = all.filter(m => m.validado).length;
+  const inc = all.filter(m => m.incidencia).length;
+  set('mb-total', all.length); set('mb-total-s', empresaActual === 'Global' ? 'Todas las empresas' : empresaActual);
+  set('mb-pend', pend); set('mb-val', val); set('mb-inc', inc);
+  set('mb-filter-info', `${rows.length} mostrados`);
+  mkChart('c-mov-estados', 'doughnut', ['Pendientes','Validados','Incidencias'], [{ data: [pend, val, inc], backgroundColor: ['#D4502A','#1A9E72','#B87318'], borderWidth: 0 }]);
+  const pos = validatedBankPosition(all);
+  mkChart('c-mov-saldos', 'bar', pos.map(m => (m.empresa ? m.empresa + ' · ' : '') + (m.banco || m.cuenta || 'Cuenta')), [{ data: pos.map(m => Number(m.saldo)||0), backgroundColor:'#1B5FA8', borderRadius:5 }]);
+  const tbody = document.getElementById('tb-movimientos');
+  if (!tbody) return;
+  tbody.innerHTML = rows.slice(0, 300).map(m => `
+    <tr>
+      <td>${fdate(m.fecha)}</td><td>${m.empresa || '—'}</td>
+      <td><strong>${m.banco || '—'}</strong><br><span style="font-size:12px;color:var(--text3)">${m.cuenta || ''}</span></td>
+      <td>${m.concepto || '—'}<br><span style="font-size:12px;color:var(--text3)">${m.referencia || ''}</span></td>
+      <td class="tr" style="font-weight:700;color:${(Number(m.importe)||0)>=0?'var(--green)':'var(--red)'}">${eur(Number(m.importe)||0)}</td>
+      <td class="tr">${m.saldo ? eur(Number(m.saldo)||0) : '—'}</td>
+      <td>${m.es_nuevo ? '<span class="pill pz">Nuevo</span>' : '<span class="pill pb">Revisado</span>'}</td>
+      <td><input type="checkbox" ${m.validado ? 'checked' : ''} onchange="setMovimientoField('${m.id}','validado',this.checked)"></td>
+      <td><input type="checkbox" ${m.incidencia ? 'checked' : ''} onchange="setMovimientoField('${m.id}','incidencia',this.checked)"></td>
+      <td><input value="${String(m.nota_incidencia || '').replace(/"/g,'&quot;')}" onchange="setMovimientoField('${m.id}','nota_incidencia',this.value)" placeholder="Nota" style="width:160px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"></td>
+    </tr>`).join('') || '<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:26px">Sin movimientos bancarios. Sube un Excel o CSV para empezar a validar la tesorería.</td></tr>';
+}
+function exportBankMovementsCSV() {
+  const rows = filterBankMovements();
+  const headers = ['fecha','empresa','banco','cuenta','concepto','referencia','importe','saldo','validado','incidencia','nota_incidencia','archivo_origen'];
+  const csv = [headers.join(';'), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g,'""')}"`).join(';'))].join('\n');
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'movimientos_bancarios.csv'; a.click(); URL.revokeObjectURL(a.href);
 }
 
 

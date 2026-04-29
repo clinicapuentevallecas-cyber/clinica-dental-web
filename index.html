@@ -216,13 +216,26 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div class="card"><div class="ct">Validación por estado</div><div style="height:220px;position:relative"><canvas id="c-mov-estados"></canvas></div></div>
     <div class="card"><div class="ct">Posición bancaria validada</div><div class="ps" style="margin-bottom:8px">Suma del último saldo validado por banco/cuenta. Sirve para contrastar la fotografía de Tesorería.</div><div style="height:220px;position:relative"><canvas id="c-mov-saldos"></canvas></div></div>
   </div>
+  <div class="card mb">
+    <div class="ch" style="gap:10px;flex-wrap:wrap;align-items:flex-start">
+      <div><div class="ct" style="margin:0">Reglas de conciliación automática</div><div style="font-size:12px;color:var(--text3);margin-top:4px">El sistema clasifica nuevos movimientos si el concepto contiene el texto de una regla. Al validar una categoría puedes crear/aprender una regla.</div></div>
+      <button class="eb" style="margin-left:auto" onclick="aplicarReglasBancarias(true)">Reclasificar pendientes</button>
+    </div>
+    <div class="tw"><table><thead><tr><th>Texto contiene</th><th>Empresa</th><th>Banco</th><th>Tipo</th><th>Cuenta destino</th><th>Proveedor</th><th>Activa</th></tr></thead><tbody id="tb-reglas-banco"></tbody></table></div>
+    <div class="ch" style="gap:8px;flex-wrap:wrap;margin-top:12px">
+      <input class="inp" id="rule-text" placeholder="Ej: AEAT, IONOS, NOMINA...">
+      <select class="sel" id="rule-tipo"><option value="gasto">Gasto</option><option value="ingreso">Ingreso</option><option value="traspaso">Traspaso interno</option><option value="financiacion">Financiación</option><option value="impuesto">Impuesto</option></select>
+      <select class="sel" id="rule-cat"></select>
+      <button class="btn bg2btn" onclick="addBankRuleFromForm()">Añadir regla</button>
+    </div>
+  </div>
   <div class="card">
     <div class="ch" style="gap:10px;flex-wrap:wrap">
       <input class="inp" id="mb-q" placeholder="Buscar concepto, banco, cuenta..." oninput="renderMovimientos()">
-      <select class="sel" id="mb-estado" onchange="renderMovimientos()"><option value="all">Todos los estados</option><option value="pendiente">Pendientes</option><option value="nuevo">Nuevos</option><option value="validado">Validados</option><option value="incidencia">Con incidencia</option></select>
+      <select class="sel" id="mb-estado" onchange="renderMovimientos()"><option value="all">Todos los estados</option><option value="pendiente">Pendientes</option><option value="nuevo">Nuevos</option><option value="validado">Validados</option><option value="incidencia">Con incidencia</option><option value="sin_clasificar">Sin clasificar</option><option value="auto">Clasificados auto</option></select>
       <span class="filter-tag" id="mb-filter-info"></span>
     </div>
-    <div class="tw"><table><thead><tr><th>Fecha</th><th>Empresa</th><th>Banco / cuenta</th><th>Concepto</th><th class="tr">Importe</th><th class="tr">Saldo</th><th>Nuevo</th><th>Validado</th><th>Incidencia</th><th>Nota</th></tr></thead><tbody id="tb-movimientos"></tbody></table></div>
+    <div class="tw"><table><thead><tr><th>Fecha</th><th>Empresa</th><th>Banco / cuenta</th><th>Concepto</th><th>Cuenta asociada</th><th class="tr">Importe</th><th class="tr">Saldo</th><th>Estado</th><th>Validado</th><th>Incidencia</th><th>Nota</th></tr></thead><tbody id="tb-movimientos"></tbody></table></div>
   </div>
 </div>
 
@@ -445,7 +458,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-22 cargado: gastos pendientes incluyen pendiente resto");
+console.log("INDEX FINANCIERO v2026-04-29-23 cargado: conciliacion bancaria automatica por reglas de concepto");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -936,7 +949,7 @@ function setC(id, c) { const e = document.getElementById(id); if (e) e.className
 // ============================================================
 // DATA STORE
 // ============================================================
-let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [], ingresosExternos: [], movimientos: [] };
+let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [], ingresosExternos: [], movimientos: [], reglasBanco: [] };
 
 // ============================================================
 // SYNC FROM GOOGLE SHEETS
@@ -1037,18 +1050,20 @@ async function syncSheets() {
 // ============================================================
 async function loadDB() {
   if (!sb) return;
-  const [c, g, f, dv, w, mb] = await Promise.all([
+  const [c, g, f, dv, w, mb, rb] = await Promise.all([
     sb.from('cajas_diarias').select('*').order('fecha'),
     sb.from('gastos').select('*').order('fecha', { ascending: false }),
     sb.from('financiaciones').select('*').order('fecha', { ascending: false }),
     sb.from('devoluciones').select('*').order('fecha_solicitud', { ascending: false }),
     sb.from('trabajadores').select('*').order('nombre'),
     sb.from('movimientos_bancarios').select('*').order('fecha', { ascending: false }),
+    sb.from('reglas_conciliacion_bancaria').select('*').eq('activa', true).order('prioridad', { ascending: false }),
   ]);
   D.cajas = (c.data || []).filter(esCajaReal); D.gastos = g.data || []; D.fins = f.data || [];
   try { D.tes = JSON.parse(localStorage.getItem('cd_tesoreria_cuentas') || '[]'); } catch (_) { D.tes = []; }
   D.devs = dv.data || []; D.workers = w.data || [];
   D.movimientos = (mb && !mb.error && Array.isArray(mb.data)) ? mb.data : loadBankMovementsLocal();
+  D.reglasBanco = (rb && !rb.error && Array.isArray(rb.data)) ? rb.data : loadBankRulesLocal();
   D.ingresosExternos = await fetchIngresosExternos();
   const ls = localStorage.getItem('cd_last_sync');
   if (ls) set('lsync', 'Última sync: ' + ls);
@@ -1098,7 +1113,7 @@ function esCajaReal(c) {
 
 function renderAll() {
   renderEmpresaBars();
-  renderResumen(); renderTes(); renderProductos(); renderGastos(); renderIngresos(); renderPrev(); renderMovimientos();
+  renderResumen(); renderTes(); renderProductos(); renderGastos(); renderIngresos(); renderPrev(); renderMovimientos(); renderReglasBancarias();
   renderFins(); renderDevs(); renderEquipo(); renderObjs();
 }
 
@@ -1451,6 +1466,115 @@ async function saveBankMovementsSupabase() {
     if (error) console.warn('[Movimientos bancarios] No se pudieron guardar en Supabase. Uso localStorage.', error.message);
   } catch (err) { console.warn('[Movimientos bancarios] Tabla no disponible. Uso localStorage.', err.message || err); }
 }
+function loadBankRulesLocal() {
+  try { return JSON.parse(localStorage.getItem('bank_rules') || '[]'); } catch (_) { return []; }
+}
+function saveBankRulesLocal() { localStorage.setItem('bank_rules', JSON.stringify(D.reglasBanco || [])); }
+async function saveBankRulesSupabase() {
+  saveBankRulesLocal();
+  if (!sb) return;
+  try {
+    const rows = (D.reglasBanco || []).map(r => ({...r, activa: r.activa !== false}));
+    if (rows.length) {
+      const { error } = await sb.from('reglas_conciliacion_bancaria').upsert(rows, { onConflict: 'id' });
+      if (error) console.warn('[Reglas conciliación] No se pudieron guardar en Supabase. Uso localStorage.', error.message);
+    }
+  } catch (err) { console.warn('[Reglas conciliación] Tabla no disponible. Uso localStorage.', err.message || err); }
+}
+function gastoCategorias() {
+  const setCats = new Set((D.gastos || []).map(g => (g.fuente_gasto || g.categoria || '').trim()).filter(Boolean));
+  return Array.from(setCats).sort((a,b)=>a.localeCompare(b,'es'));
+}
+function ruleMatchesMovement(rule, m) {
+  if (!rule || rule.activa === false || !m) return false;
+  const txt = normTxt(rule.texto_contiene || rule.texto || '');
+  if (!txt) return false;
+  const concepto = normTxt([m.concepto, m.referencia].join(' '));
+  if (!concepto.includes(txt)) return false;
+  if (rule.empresa && rule.empresa !== 'Global' && m.empresa && rule.empresa !== m.empresa) return false;
+  if (rule.banco && normTxt(rule.banco) && normTxt(m.banco) && !normTxt(m.banco).includes(normTxt(rule.banco))) return false;
+  return true;
+}
+function applyBankRulesToMovement(m, overwrite=false) {
+  if (!m || (!overwrite && (m.cuenta_asociada || m.categoria_asociada || m.tipo_movimiento === 'traspaso'))) return m;
+  const rules = (D.reglasBanco || []).filter(r => r.activa !== false).sort((a,b)=>(Number(b.prioridad)||0)-(Number(a.prioridad)||0));
+  const rule = rules.find(r => ruleMatchesMovement(r, m));
+  if (!rule) {
+    if (!m.tipo_movimiento) m.tipo_movimiento = Number(m.importe) >= 0 ? 'ingreso' : 'gasto';
+    if (!m.estado_clasificacion) m.estado_clasificacion = 'sin_clasificar';
+    return m;
+  }
+  m.cuenta_asociada = rule.categoria_destino || rule.cuenta_destino || '';
+  m.categoria_asociada = m.cuenta_asociada;
+  m.tipo_movimiento = rule.tipo || (Number(m.importe) >= 0 ? 'ingreso' : 'gasto');
+  m.proveedor_asociado = rule.proveedor_sugerido || m.proveedor_asociado || '';
+  m.regla_id = rule.id;
+  m.estado_clasificacion = 'auto';
+  return m;
+}
+async function aplicarReglasBancarias(overwrite=false) {
+  (D.movimientos || []).forEach(m => applyBankRulesToMovement(m, overwrite));
+  await saveBankMovementsSupabase();
+  renderMovimientos();
+  renderReglasBancarias();
+}
+function ruleIdFromFields(texto, empresa, banco, tipo, cat) {
+  const raw = [texto, empresa || '', banco || '', tipo || '', cat || ''].map(x=>normTxt(String(x))).join('|');
+  try { return 'rbc_' + btoa(unescape(encodeURIComponent(raw))).replace(/[^a-zA-Z0-9]/g,'').slice(0,38); }
+  catch(e) { return 'rbc_' + raw.replace(/[^a-zA-Z0-9]/g,'_').slice(0,38); }
+}
+async function addBankRuleFromForm(textoArg, catArg, tipoArg, empresaArg, bancoArg, proveedorArg) {
+  const texto = String(textoArg ?? document.getElementById('rule-text')?.value ?? '').trim();
+  const cat = String(catArg ?? document.getElementById('rule-cat')?.value ?? '').trim();
+  const tipo = String(tipoArg ?? document.getElementById('rule-tipo')?.value ?? 'gasto').trim();
+  const empresa = empresaArg || (empresaActual === 'Global' ? 'Global' : empresaActual);
+  const banco = bancoArg || '';
+  if (!texto || !cat) { alert('Indica texto del concepto y cuenta destino'); return; }
+  const rule = {
+    id: ruleIdFromFields(texto, empresa, banco, tipo, cat),
+    empresa, banco, texto_contiene: texto, tipo,
+    categoria_destino: cat, proveedor_sugerido: proveedorArg || '', forma_pago: '', prioridad: 100, activa: true,
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+  };
+  const ix = (D.reglasBanco || []).findIndex(r => r.id === rule.id);
+  if (ix >= 0) D.reglasBanco[ix] = {...D.reglasBanco[ix], ...rule}; else D.reglasBanco.push(rule);
+  await saveBankRulesSupabase();
+  await aplicarReglasBancarias(false);
+  const inp = document.getElementById('rule-text'); if (inp) inp.value = '';
+}
+async function toggleBankRule(id, active) {
+  const r = (D.reglasBanco || []).find(x=>x.id===id); if (!r) return;
+  r.activa = !!active; r.updated_at = new Date().toISOString();
+  await saveBankRulesSupabase(); renderReglasBancarias(); renderMovimientos();
+}
+async function setMovimientoCategoria(id, value) {
+  const m = (D.movimientos || []).find(x => x.id === id); if (!m) return;
+  m.cuenta_asociada = value; m.categoria_asociada = value; m.estado_clasificacion = value ? 'manual' : 'sin_clasificar';
+  if (!m.tipo_movimiento || m.tipo_movimiento === 'sin_clasificar') m.tipo_movimiento = Number(m.importe) >= 0 ? 'ingreso' : 'gasto';
+  await saveBankMovementsSupabase(); renderMovimientos();
+}
+function suggestedRuleText(concepto) {
+  const clean = String(concepto || '').replace(/[0-9]{2,}/g,' ').replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+/g,' ').trim();
+  const words = clean.split(/\s+/).filter(w => w.length > 2 && !['pago','recibo','factura','transferencia','cargo','abono'].includes(normTxt(w)));
+  return (words.slice(0,3).join(' ') || clean || '').trim();
+}
+async function learnRuleFromMovimiento(id) {
+  const m = (D.movimientos || []).find(x => x.id === id); if (!m || !m.cuenta_asociada) { alert('Primero asigna una cuenta asociada'); return; }
+  const texto = suggestedRuleText(m.concepto);
+  await addBankRuleFromForm(texto, m.cuenta_asociada, m.tipo_movimiento || (Number(m.importe)>=0?'ingreso':'gasto'), m.empresa || empresaActual, m.banco || '', m.proveedor_asociado || '');
+}
+function renderReglasBancarias() {
+  const catSel = document.getElementById('rule-cat');
+  if (catSel) {
+    const cats = gastoCategorias();
+    catSel.innerHTML = [''].concat(cats).map(c => `<option value="${c}">${c || 'Cuenta destino'}</option>`).join('');
+  }
+  const tbody = document.getElementById('tb-reglas-banco');
+  if (!tbody) return;
+  const rows = filterEmpresaFor(D.reglasBanco || [], empresaActual, 'empresa');
+  tbody.innerHTML = rows.slice(0,80).map(r => `<tr><td style="font-weight:600">${r.texto_contiene || '—'}</td><td>${r.empresa || 'Global'}</td><td>${r.banco || 'Todos'}</td><td><span class="pill pb">${r.tipo || 'gasto'}</span></td><td>${r.categoria_destino || '—'}</td><td>${r.proveedor_sugerido || '—'}</td><td><input type="checkbox" ${r.activa !== false ? 'checked' : ''} onchange="toggleBankRule('${r.id}',this.checked)"></td></tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:18px">Sin reglas todavía. Añade una regla o aprende desde un movimiento validado.</td></tr>';
+}
+
 function pickAny(row, names) {
   const keys = Object.keys(row || {});
   for (const n of names) {
@@ -1498,10 +1622,17 @@ function normalizeBankMovement(row, fileName) {
     es_nuevo: true,
     incidencia: false,
     nota_incidencia: '',
+    cuenta_asociada: '',
+    categoria_asociada: '',
+    tipo_movimiento: Number(importe) >= 0 ? 'ingreso' : 'gasto',
+    estado_clasificacion: 'sin_clasificar',
+    proveedor_asociado: '',
+    regla_id: '',
     archivo_origen: fileName || '',
     uploaded_at: new Date().toISOString()
   };
   m.id = 'mb_' + btoa(unescape(encodeURIComponent(bankMoveKey(m)))).replace(/[^a-zA-Z0-9]/g,'').slice(0,42);
+  applyBankRulesToMovement(m, false);
   return m;
 }
 async function handleBankMovementsFile(file) {
@@ -1540,11 +1671,13 @@ function filterBankMovements() {
   const q = normTxt(document.getElementById('mb-q')?.value || '');
   const st = document.getElementById('mb-estado')?.value || 'all';
   let rows = filterEmpresaFor(D.movimientos || [], empresaActual, 'empresa');
-  if (q) rows = rows.filter(m => normTxt([m.fecha,m.empresa,m.banco,m.cuenta,m.concepto,m.referencia,m.archivo_origen].join(' ')).includes(q));
+  if (q) rows = rows.filter(m => normTxt([m.fecha,m.empresa,m.banco,m.cuenta,m.concepto,m.referencia,m.cuenta_asociada,m.categoria_asociada,m.tipo_movimiento,m.archivo_origen].join(' ')).includes(q));
   if (st === 'pendiente') rows = rows.filter(m => !m.validado);
   if (st === 'nuevo') rows = rows.filter(m => m.es_nuevo);
   if (st === 'validado') rows = rows.filter(m => m.validado);
   if (st === 'incidencia') rows = rows.filter(m => m.incidencia);
+  if (st === 'sin_clasificar') rows = rows.filter(m => !m.cuenta_asociada && m.tipo_movimiento !== 'traspaso');
+  if (st === 'auto') rows = rows.filter(m => m.estado_clasificacion === 'auto');
   return rows;
 }
 function setMovimientoField(id, field, value) {
@@ -1580,22 +1713,27 @@ function renderMovimientos() {
   mkChart('c-mov-saldos', 'bar', pos.map(m => (m.empresa ? m.empresa + ' · ' : '') + (m.banco || m.cuenta || 'Cuenta')), [{ data: pos.map(m => Number(m.saldo)||0), backgroundColor:'#1B5FA8', borderRadius:5 }]);
   const tbody = document.getElementById('tb-movimientos');
   if (!tbody) return;
-  tbody.innerHTML = rows.slice(0, 300).map(m => `
-    <tr>
+  const cats = gastoCategorias();
+  tbody.innerHTML = rows.slice(0, 300).map(m => {
+    const cls = m.estado_clasificacion === 'auto' ? '<span class="pill pg">Auto</span>' : (m.cuenta_asociada ? '<span class="pill pb">Manual</span>' : '<span class="pill pz">Sin clasificar</span>');
+    const catOptions = [''].concat(cats).map(c => `<option value="${c}" ${String(m.cuenta_asociada || m.categoria_asociada || '')===c?'selected':''}>${c || 'Sin cuenta'}</option>`).join('');
+    return `<tr>
       <td>${fdate(m.fecha)}</td><td>${m.empresa || '—'}</td>
       <td><strong>${m.banco || '—'}</strong><br><span style="font-size:12px;color:var(--text3)">${m.cuenta || ''}</span></td>
       <td>${m.concepto || '—'}<br><span style="font-size:12px;color:var(--text3)">${m.referencia || ''}</span></td>
+      <td><select onchange="setMovimientoCategoria('${m.id}',this.value)" style="width:150px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px">${catOptions}</select><br>${cls} <button class="eb" style="font-size:11px;padding:3px 7px;margin-top:4px" onclick="learnRuleFromMovimiento('${m.id}')">Aprender</button></td>
       <td class="tr" style="font-weight:700;color:${(Number(m.importe)||0)>=0?'var(--green)':'var(--red)'}">${eur(Number(m.importe)||0)}</td>
       <td class="tr">${m.saldo ? eur(Number(m.saldo)||0) : '—'}</td>
       <td>${m.es_nuevo ? '<span class="pill pz">Nuevo</span>' : '<span class="pill pb">Revisado</span>'}</td>
       <td><input type="checkbox" ${m.validado ? 'checked' : ''} onchange="setMovimientoField('${m.id}','validado',this.checked)"></td>
       <td><input type="checkbox" ${m.incidencia ? 'checked' : ''} onchange="setMovimientoField('${m.id}','incidencia',this.checked)"></td>
-      <td><input value="${String(m.nota_incidencia || '').replace(/"/g,'&quot;')}" onchange="setMovimientoField('${m.id}','nota_incidencia',this.value)" placeholder="Nota" style="width:160px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"></td>
-    </tr>`).join('') || '<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:26px">Sin movimientos bancarios. Sube un Excel o CSV para empezar a validar la tesorería.</td></tr>';
+      <td><input value="${String(m.nota_incidencia || '').replace(/"/g,'&quot;')}" onchange="setMovimientoField('${m.id}','nota_incidencia',this.value)" placeholder="Nota" style="width:150px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="11" style="text-align:center;color:var(--text3);padding:26px">Sin movimientos bancarios. Sube un Excel o CSV para empezar a validar la tesorería.</td></tr>';
 }
 function exportBankMovementsCSV() {
   const rows = filterBankMovements();
-  const headers = ['fecha','empresa','banco','cuenta','concepto','referencia','importe','saldo','validado','incidencia','nota_incidencia','archivo_origen'];
+  const headers = ['fecha','empresa','banco','cuenta','concepto','referencia','cuenta_asociada','tipo_movimiento','estado_clasificacion','importe','saldo','validado','incidencia','nota_incidencia','archivo_origen'];
   const csv = [headers.join(';'), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g,'""')}"`).join(';'))].join('\n');
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'movimientos_bancarios.csv'; a.click(); URL.revokeObjectURL(a.href);

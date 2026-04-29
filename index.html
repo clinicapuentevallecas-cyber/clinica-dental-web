@@ -122,6 +122,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
   <div class="nav-item active" onclick="nav('resumen',this)"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M1 6l7-5 7 5v8H10v-4H6v4H1z"/></svg>Resumen</div>
   <div class="nav-item" onclick="nav('tesoreria',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="4" width="14" height="10" rx="2"/><path d="M1 7h14"/></svg>Tesorería</div>
   <div class="nav-item" onclick="nav('gastos',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M5 6h6M5 9h4" stroke-linecap="round"/></svg>Gastos</div>
+  <div class="nav-item" onclick="nav('ingresos',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M4 7h8M4 10h5" stroke-linecap="round"/><path d="M11 1v4M9 3h4" stroke-linecap="round"/></svg>Ingresos</div>
   <div class="nav-item" onclick="nav('prevision',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12l4-4 3 2 5-6" stroke-linecap="round"/></svg>Previsión</div>
   <div class="nav-s">Operativa</div>
   <div class="nav-item" onclick="nav('productos',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M4 7h8M4 10h5" stroke-linecap="round"/></svg>Productos bancarios</div>
@@ -237,6 +238,43 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
   </div>
 </div>
 
+
+<!-- INGRESOS -->
+<div class="page" id="page-ingresos">
+  <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+    <div><div class="pt">Ingresos</div><div class="ps">Corporación desde cajas mensuales · Bridge y Vallecas Las desde facturas publicadas</div></div>
+    <div id="empresa-bar-i" class="empresa-bar" style="margin-bottom:0"></div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="ml">Total ingresos</div><div class="mv" id="i-tot">—</div><div class="ms" id="i-cnt"></div></div>
+    <div class="metric"><div class="ml">Ingresos del mes</div><div class="mv" id="i-mes">—</div><div class="ms" id="i-mes-s"></div></div>
+    <div class="metric"><div class="ml">IVA repercutido</div><div class="mv" id="i-iva">—</div><div class="ms">Facturas con IVA informado</div></div>
+    <div class="metric"><div class="ml">Pendiente de cobro</div><div class="mv dn" id="i-pend">—</div><div class="ms" id="i-pend-s"></div></div>
+  </div>
+  <div class="g2 mb">
+    <div class="card"><div class="ct">Ingresos por mes</div><div style="height:230px;position:relative"><canvas id="c-i-mes"></canvas></div></div>
+    <div class="card"><div class="ct">Ingresos por empresa</div><div style="height:230px;position:relative"><canvas id="c-i-emp"></canvas></div></div>
+  </div>
+  <div class="g2 mb">
+    <div class="card"><div class="ct">IVA repercutido por mes</div><div style="height:220px;position:relative"><canvas id="c-i-iva"></canvas></div></div>
+    <div class="card"><div class="ct">Forma de pago</div><div style="height:220px;position:relative"><canvas id="c-i-fp"></canvas></div></div>
+  </div>
+  <div class="card">
+    <div class="filter-bar">
+      <input id="i-q" placeholder="🔍 Buscar factura, concepto, proveedor..." oninput="filterI()" style="flex:1;min-width:170px">
+      <select id="i-mes-f" onchange="filterI()"><option value="">Todos los meses</option></select>
+      <select id="i-emp-f" onchange="filterI()"><option value="">Todas las empresas</option></select>
+      <select id="i-estado-f" onchange="filterI()"><option value="">Todos los estados</option></select>
+      <select id="i-fp-f" onchange="filterI()"><option value="">Todas las formas de pago</option></select>
+      <span class="filter-tag" id="i-count-tag"></span>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th>Fecha</th><th>Empresa</th><th>Factura</th><th>Concepto</th><th>Proveedor</th><th>Estado</th><th>Forma pago</th><th class="tr">Importe</th><th class="tr">IVA</th></tr></thead>
+      <tbody id="tb-i"></tbody>
+    </table></div>
+  </div>
+</div>
+
 <!-- PREVISIÓN -->
 <div class="page" id="page-prevision">
   <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
@@ -275,7 +313,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div style="height:280px;position:relative"><canvas id="c-prev-part"></canvas></div>
   </div>
   <div class="card mb"><div class="ct">Resumen mensual del escenario</div><div class="tw"><table><thead><tr><th>Mes</th><th class="tr">Ingresos</th><th class="tr">Gastos</th><th class="tr">Balance</th><th class="tr">Tesorería prevista</th></tr></thead><tbody id="tb-prev-annual"></tbody></table></div></div>
-  <div class="card"><div class="ch"><div class="ct" style="margin:0">Editor anual por partidas</div><span class="filter-tag" id="prev-edit-info"></span></div><div class="tw"><table><thead><tr><th>Partida</th><th>Base</th><th>Ene</th><th>Feb</th><th>Mar</th><th>Abr</th><th>May</th><th>Jun</th><th>Jul</th><th>Ago</th><th>Sep</th><th>Oct</th><th>Nov</th><th>Dic</th><th class="tr">Total anual</th></tr></thead><tbody id="tb-prev-edit"></tbody></table></div></div>
+  <div class="card"><div class="ch"><div><div class="ct" style="margin:0">Editor anual por partidas</div><div class="ps" style="margin-top:4px">Usa las mismas partidas de la columna Fuente de gasto de Gastos Generales.</div></div><span class="filter-tag" id="prev-edit-info"></span></div><div class="tw"><table><thead><tr><th>Partida</th><th>Base</th><th>Ene</th><th>Feb</th><th>Mar</th><th>Abr</th><th>May</th><th>Jun</th><th>Jul</th><th>Ago</th><th>Sep</th><th>Oct</th><th>Nov</th><th>Dic</th><th class="tr">Total anual</th></tr></thead><tbody id="tb-prev-edit"></tbody></table></div></div>
 </div>
 
 <!-- FINANCIACIONES -->
@@ -362,7 +400,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-28-14 cargado: prevision anual con contenido desde objetivos, gastos y Supabase");
+console.log("INDEX FINANCIERO v2026-04-29-16 cargado: modulo ingresos con cajas Corporacion y CSV Bridge/Vallecas");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -371,6 +409,7 @@ console.log("INDEX FINANCIERO v2026-04-28-14 cargado: prevision anual con conten
 // Financiaciones: fila 1 = FF,FECHA,N.PETICION,CANAL,FINANCIADO,BANCO,COMISION,DESCUENTO,% DESCUENTO,MESES,NOMBRE,NIF,ESTADO
 // ============================================================
 const BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSBbKDnkWMySnc2VE1G0zGZD47g4ErXqseJzhf497DLsEEBtoQlq1Z08HZiY1KZFw/pub';
+const INGRESOS_EXTERNOS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSBbKDnkWMySnc2VE1G0zGZD47g4ErXqseJzhf497DLsEEBtoQlq1Z08HZiY1KZFw/pub?gid=1441132040&single=true&output=csv';
 const GID = {
   Enero26:   '1721822184',
   Febrero26: '752470346',
@@ -523,6 +562,36 @@ async function fetchGastos() {
       importe: parseNum(r['Importe']),
       observaciones: r['Observaciones'] || '',
     }));
+}
+
+
+async function fetchIngresosExternos() {
+  try {
+    const text = await fetchText(INGRESOS_EXTERNOS_URL);
+    const rows = parseCSVFromRow(text, 1); // cabecera en fila 2
+    return rows
+      .filter(r => r['Empresa'] && r['Fecha'] && r['Importe'])
+      .map(r => ({
+        empresa: (r['Empresa'] || '').trim(),
+        fecha: fixDate(r['Fecha']),
+        factura: r['Factura'] || '',
+        concepto: r['Concepto'] || '',
+        proveedor: r['Proveedor'] || '',
+        estado: r['Estado'] || '',
+        forma_pago: r['Forma de pago'] || '',
+        subida: r['Subida'] || '',
+        importe: parseNum(r['Importe']),
+        iva: parseNum(r['IVA']),
+        irpf: parseNum(r['IRPF']),
+        observaciones: r['Observaciones'] || '',
+        seguros_s: r['Seguros S.'] || '',
+        fuente: 'Facturas Bridge/Vallecas'
+      }))
+      .filter(r => r.fecha && Math.abs(Number(r.importe)||0) > 0.0001);
+  } catch (e) {
+    console.warn('[Ingresos externos] No se pudieron cargar Bridge/Vallecas:', e.message || e);
+    return [];
+  }
 }
 
 // CAJAS — cabecera en fila 4 (índice 3)
@@ -803,7 +872,7 @@ function setC(id, c) { const e = document.getElementById(id); if (e) e.className
 // ============================================================
 // DATA STORE
 // ============================================================
-let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [] };
+let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [], ingresosExternos: [] };
 
 // ============================================================
 // SYNC FROM GOOGLE SHEETS
@@ -907,6 +976,7 @@ async function loadDB() {
   D.cajas = (c.data || []).filter(esCajaReal); D.gastos = g.data || []; D.fins = f.data || [];
   try { D.tes = JSON.parse(localStorage.getItem('cd_tesoreria_cuentas') || '[]'); } catch (_) { D.tes = []; }
   D.devs = dv.data || []; D.workers = w.data || [];
+  D.ingresosExternos = await fetchIngresosExternos();
   const ls = localStorage.getItem('cd_last_sync');
   if (ls) set('lsync', 'Última sync: ' + ls);
   await loadPrevConfigFromSupabase();
@@ -930,7 +1000,7 @@ async function setEmpresa(emp) {
 }
 
 function renderEmpresaBars() {
-  ['empresa-bar-r','empresa-bar-t','empresa-bar-g','empresa-bar-p'].forEach(id => {
+  ['empresa-bar-r','empresa-bar-t','empresa-bar-g','empresa-bar-i','empresa-bar-p'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.innerHTML = EMPRESAS.map(e =>
@@ -955,21 +1025,60 @@ function esCajaReal(c) {
 
 function renderAll() {
   renderEmpresaBars();
-  renderResumen(); renderTes(); renderProductos(); renderGastos(); renderPrev();
+  renderResumen(); renderTes(); renderProductos(); renderGastos(); renderIngresos(); renderPrev();
   renderFins(); renderDevs(); renderEquipo(); renderObjs();
+}
+
+
+function ingresoPendiente(i) {
+  const e = normTxt(i.estado || '');
+  return e.includes('pend') || e.includes('no cob') || e.includes('sin cobrar') || e.includes('por cobrar');
+}
+function ingresoCobrado(i) {
+  const e = normTxt(i.estado || '');
+  return e.includes('cob') || e.includes('pagad') || e === 'ok' || e.includes('abonad');
+}
+function ingresosCorporacionDesdeCajas() {
+  return (D.cajas || []).filter(esCajaReal).map(c => ({
+    empresa: 'Corporacion',
+    fecha: c.fecha,
+    factura: 'Caja diaria',
+    concepto: 'Caja diaria',
+    proveedor: 'Clínica Dental',
+    estado: 'Cobrado',
+    forma_pago: 'Mixto',
+    importe: Number(c.total) || 0,
+    iva: 0,
+    irpf: 0,
+    fuente: 'Cajas mensuales',
+    caja: c
+  })).filter(i => i.fecha && Math.abs(i.importe || 0) > 0.0001);
+}
+function allIngresosOperativos() {
+  return [...ingresosCorporacionDesdeCajas(), ...(D.ingresosExternos || [])]
+    .filter(i => i.fecha && Math.abs(Number(i.importe)||0) > 0.0001)
+    .sort((a,b) => String(b.fecha).localeCompare(String(a.fecha)));
+}
+function ingresosFiltradosEmpresa() { return filtrarEmp(allIngresosOperativos(), 'empresa'); }
+function estadoIngresoBadge(i) {
+  const estado = (i.estado || '').trim() || 'Sin estado';
+  if (ingresoPendiente(i)) return `<span class="pill pr" style="font-size:10px">${estado}</span>`;
+  if (ingresoCobrado(i)) return `<span class="pill pg" style="font-size:10px">${estado}</span>`;
+  return `<span class="pill pz" style="font-size:10px">${estado}</span>`;
 }
 
 function renderResumen() {
   const cajas = filtrarEmp(D.cajas, 'empresa');
+  const ingresos = ingresosFiltradosEmpresa();
   const gastos = filtrarEmp(D.gastos, 'empresa');
   // La tabla financiaciones no tiene columna empresa en Supabase; se muestran globales.
   const fins = D.fins;
-  const fac = cajas.reduce((s, c) => s + (c.total || 0), 0);
+  const fac = ingresos.reduce((s, i) => s + (Number(i.importe) || 0), 0);
   const gst = gastos.reduce((s, g) => s + (g.importe || 0), 0);
   const finOps = fins.reduce((s, f) => s + (f.financiado || 0), 0);
   const dp = D.devs.filter(d => d.estado === 'PENDIENTE').length;
   const res = fac - gst;
-  const diasFacturados = cajas.filter(c => c.facturado || (c.total || 0) > 0).length;
+  const diasFacturados = ingresos.length;
   set('r-fac', eur(fac)); set('r-fac-s', diasFacturados + ' días con datos');
   set('r-res', eur(res)); setC('r-res', 'mv ' + (res >= 0 ? 'up' : 'dn'));
   set('r-res-s', res >= 0 ? '▲ En positivo' : '▼ En negativo');
@@ -977,7 +1086,7 @@ function renderResumen() {
   set('r-dev', dp); setC('r-dev', 'mv ' + (dp > 0 ? 'dn' : 'up'));
   set('r-dev-s', dp > 0 ? 'Requieren atención' : 'Todo resuelto');
 
-  const pm = {}; cajas.forEach(c => { const m = c.fecha.slice(5, 7); pm[m] = (pm[m] || 0) + (c.total || 0); });
+  const pm = {}; ingresos.forEach(i => { const m = String(i.fecha).slice(5, 7); pm[m] = (pm[m] || 0) + (Number(i.importe) || 0); });
   const mk = Object.keys(pm).sort();
   mkChart('c-fac', 'bar', mk.map(m => MS[+m-1]), [{ data: mk.map(m => pm[m]), backgroundColor: '#1B5FA8', borderRadius: 5, barPercentage: 0.7 }]);
 
@@ -1175,6 +1284,64 @@ function filterG() {
 }
 
 
+
+function renderIngresos() {
+  const ingresos = ingresosFiltradosEmpresa();
+  const total = ingresos.reduce((s,i)=>s+(Number(i.importe)||0),0);
+  const iva = ingresos.reduce((s,i)=>s+(Number(i.iva)||0),0);
+  const pend = ingresos.filter(ingresoPendiente);
+  const pendTot = pend.reduce((s,i)=>s+(Number(i.importe)||0),0);
+  const meses = {};
+  ingresos.forEach(i => { const m = String(i.fecha||'').slice(5,7); if (m) meses[m] = (meses[m]||0) + (Number(i.importe)||0); });
+  const mk = Object.keys(meses).sort();
+  const ultimoMes = mk[mk.length-1] || '';
+  set('i-tot', eur(total)); set('i-cnt', ingresos.length + ' registros');
+  set('i-mes', eur(ultimoMes ? meses[ultimoMes] : 0)); set('i-mes-s', ultimoMes ? M[+ultimoMes-1] : 'Sin mes');
+  set('i-iva', eur(iva));
+  set('i-pend', eur(pendTot)); set('i-pend-s', pend.length + ' pendiente(s)');
+
+  mkChart('c-i-mes', 'bar', mk.map(m => MS[+m-1]), [{ data: mk.map(m=>meses[m]), backgroundColor: '#1B5FA8', borderRadius: 5 }]);
+  const byEmp = {}; ingresos.forEach(i => { const e = i.empresa || 'Sin empresa'; byEmp[e] = (byEmp[e]||0) + (Number(i.importe)||0); });
+  const ek = Object.keys(byEmp).sort();
+  mkChart('c-i-emp', 'doughnut', ek, [{ data: ek.map(e=>byEmp[e]), backgroundColor: COLORS, borderWidth: 0, hoverOffset: 4 }], { cutout: '60%' });
+  const byIva = {}; ingresos.forEach(i => { const m = String(i.fecha||'').slice(5,7); if (m) byIva[m] = (byIva[m]||0) + (Number(i.iva)||0); });
+  const ik = Object.keys(byIva).sort();
+  mkChart('c-i-iva', 'bar', ik.map(m => MS[+m-1]), [{ data: ik.map(m=>byIva[m]), backgroundColor: '#B87318', borderRadius: 5 }]);
+  const byFp = {}; ingresos.forEach(i => { const fp = i.forma_pago || 'Sin forma'; byFp[fp] = (byFp[fp]||0) + (Number(i.importe)||0); });
+  const fk = Object.keys(byFp).sort();
+  mkChart('c-i-fp', 'doughnut', fk, [{ data: fk.map(f=>byFp[f]), backgroundColor: COLORS, borderWidth: 0, hoverOffset: 4 }], { cutout: '60%' });
+
+  const fill = (id, vals, label) => {
+    const el = document.getElementById(id); if (!el) return;
+    const cur = el.value;
+    el.innerHTML = `<option value="">${label}</option>` + vals.map(v => `<option value="${v}">${v}</option>`).join('');
+    if (vals.includes(cur)) el.value = cur;
+  };
+  fill('i-mes-f', [...new Set(ingresos.map(i=>String(i.fecha||'').slice(0,7)).filter(Boolean))].sort(), 'Todos los meses');
+  fill('i-emp-f', [...new Set(ingresos.map(i=>i.empresa).filter(Boolean))].sort(), 'Todas las empresas');
+  fill('i-estado-f', [...new Set(ingresos.map(i=>i.estado || 'Sin estado'))].sort(), 'Todos los estados');
+  fill('i-fp-f', [...new Set(ingresos.map(i=>i.forma_pago || 'Sin forma'))].sort(), 'Todas las formas de pago');
+  filterI(false);
+}
+
+function filterI(updateCharts = true) {
+  let rows = ingresosFiltradosEmpresa();
+  const q = normTxt(document.getElementById('i-q')?.value || '');
+  const mes = document.getElementById('i-mes-f')?.value || '';
+  const emp = document.getElementById('i-emp-f')?.value || '';
+  const estado = document.getElementById('i-estado-f')?.value || '';
+  const fp = document.getElementById('i-fp-f')?.value || '';
+  if (q) rows = rows.filter(i => normTxt([i.factura,i.concepto,i.proveedor,i.empresa,i.estado,i.forma_pago].join(' ')).includes(q));
+  if (mes) rows = rows.filter(i => String(i.fecha||'').slice(0,7) === mes);
+  if (emp) rows = rows.filter(i => (i.empresa||'') === emp);
+  if (estado) rows = rows.filter(i => (i.estado || 'Sin estado') === estado);
+  if (fp) rows = rows.filter(i => (i.forma_pago || 'Sin forma') === fp);
+  set('i-count-tag', rows.length + ' registros · ' + eur(rows.reduce((s,i)=>s+(Number(i.importe)||0),0)));
+  const tbody = document.getElementById('tb-i');
+  if (!tbody) return;
+  tbody.innerHTML = rows.slice(0, 500).map(i => `<tr><td style="color:var(--text3)">${i.fecha||'—'}</td><td>${i.empresa||'—'}</td><td style="font-weight:500">${i.factura||'—'}</td><td>${i.concepto||'—'}</td><td>${i.proveedor||'—'}</td><td>${estadoIngresoBadge(i)}</td><td style="font-size:12px;color:var(--text3)">${i.forma_pago||'—'}</td><td class="tr" style="font-weight:600">${eur(i.importe)}</td><td class="tr">${i.iva ? eur(i.iva) : '—'}</td></tr>`).join('');
+}
+
 const PREV_SCENARIOS = [
   { id: 'objetivo', label: 'Ventas objetivo', mult: 1 },
   { id: 'objetivo5', label: 'Objetivo + 5%', mult: 1.05 },
@@ -1273,30 +1440,37 @@ function getPrevGastosBase() {
   if (filtered.length || empresaActual === 'Global') return filtered;
   return all;
 }
+function getPrevCategoriasGastosGenerales(gastos) {
+  // Debe coincidir con el módulo Gastos: columna "Fuente de gasto" del Excel GastosGenerales.
+  // Incluye todas las partidas aunque no tengan movimiento en algún mes para que el editor anual sea completo.
+  return [...new Set((gastos || []).map(g => (g.fuente_gasto || 'Sin categoría').trim() || 'Sin categoría'))]
+    .sort((a,b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+}
 
 function buildPrevData() {
   if (PREV_CONFIG_LOADED_FOR !== empresaActual) loadPrevConfigLocal();
   PREV_CONFIG = normPrevConfig(PREV_CONFIG);
   const gastos = getPrevGastosBase();
   const byCat = {};
+  let cats = getPrevCategoriasGastosGenerales(gastos);
+  cats.forEach(cat => { byCat[cat] = {}; });
+
   gastos.forEach(g => {
+    const cat = (g.fuente_gasto || 'Sin categoría').trim() || 'Sin categoría';
+    if (!byCat[cat]) byCat[cat] = {};
     const fg = fechaFlujoGasto(g);
     if (!fg) return;
     const m = +String(fg).slice(5,7);
     if (!m || m < 1 || m > 12) return;
-    const cat = (g.fuente_gasto || 'Sin categoría').trim() || 'Sin categoría';
-    byCat[cat] = byCat[cat] || {};
     byCat[cat][m] = (byCat[cat][m] || 0) + (Number(g.importe) || 0);
   });
-  let cats = Object.keys(byCat).sort((a,b) => {
-    const ta = Array.from({length:12}, (_,i)=>byCat[a][i+1]||0).reduce((s,v)=>s+v,0);
-    const tb = Array.from({length:12}, (_,i)=>byCat[b][i+1]||0).reduce((s,v)=>s+v,0);
-    return tb - ta;
-  });
+
+  // Mantiene exactamente las partidas de Gastos Generales y su orden alfabético, no solo las que tienen importe.
+  cats = Object.keys(byCat).sort((a,b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
   if (!cats.length) {
-    // Mantiene el editor con estructura incluso si todavía no hay gastos sincronizados.
-    ['Personal','Laboratorio','Marketing','Alquiler','Software','Financiación','Impuestos','Otros'].forEach(cat => { byCat[cat] = {}; });
-    cats = Object.keys(byCat);
+    // Solo si todavía no hay gastos sincronizados. En cuanto haya GastosGenerales, desaparece este fallback.
+    ['Banco','Deuda Proveedores','Gasto Financiacion','Impuestos','Informatica','Mantenimiento','Otros','Papeleria','Suministros'].forEach(cat => { byCat[cat] = {}; });
+    cats = Object.keys(byCat).sort((a,b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
   }
   const expenseRows = cats.map(cat => {
     const q1avg = ((byCat[cat][1]||0) + (byCat[cat][2]||0) + (byCat[cat][3]||0)) / 3;
@@ -1339,7 +1513,7 @@ function renderPrev() {
   const scenEl = document.getElementById('prev-scenarios');
   if (scenEl) scenEl.innerHTML = PREV_SCENARIOS.map(s => `<button class="eb ${data.scenario.id===s.id?'active':''}" onclick="setPrevScenario('${s.id}')">${s.label}</button>`).join('');
   set('pa-ing', eur(data.totalIngresos)); set('pa-ing-s', data.scenario.label);
-  set('pa-gas', eur(data.totalGastos)); set('pa-gas-s', data.expenseRows.length + ' partidas' + (getPrevGastosBase().length ? '' : ' · pendiente sincronizar gastos'));
+  set('pa-gas', eur(data.totalGastos)); set('pa-gas-s', data.expenseRows.length + ' partidas de Gastos Generales' + (getPrevGastosBase().length ? '' : ' · pendiente sincronizar gastos'));
   set('pa-bal', (data.totalBalance >= 0 ? '+' : '') + eur(data.totalBalance)); setC('pa-bal', 'mv ' + (data.totalBalance >= 0 ? 'up' : 'dn')); set('pa-bal-s', 'Ingresos - gastos');
   set('pa-tes', eur(data.tesoreriaFinal)); setC('pa-tes', 'mv ' + (data.tesoreriaFinal >= 0 ? 'up' : 'dn')); set('pa-tes-s', 'Partiendo de ' + eur(data.opening));
   mkChart('c-prev-anual', 'bar', data.monthly.map(r=>MS[r.m-1]), [

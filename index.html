@@ -478,7 +478,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-28 cargado: ingresos incluye siempre hojas fijas de caja como Enero26 y Powens sin preseleccion");
+console.log("INDEX FINANCIERO v2026-04-29-29 cargado: BBVA cuenta separada de BBVA LINEA en productos bancarios");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -795,6 +795,23 @@ async function fetchTesoreriaCuentas(gid, anio, mes) {
     }
     return matches[0].v || 0;
   };
+  const findBlockVal = (needle) => {
+    const all = lines.map(l => parseCSVRow(l || ''));
+    for (let r = 0; r < all.length; r++) {
+      const row = all[r] || [];
+      for (let c = 0; c < row.length; c++) {
+        if (!norm(row[c]).includes(needle)) continue;
+        // Prefer the numeric value directly underneath the header, as in the BBVA LINEA block.
+        for (let rr = r + 1; rr <= Math.min(r + 5, all.length - 1); rr++) {
+          const sameCol = parseNum((all[rr] || [])[c]);
+          if (Number.isFinite(sameCol) && String((all[rr] || [])[c] || '').trim() !== '') return sameCol || 0;
+          const nextCol = parseNum((all[rr] || [])[c + 1]);
+          if (Number.isFinite(nextCol) && String((all[rr] || [])[c + 1] || '').trim() !== '') return nextCol || 0;
+        }
+      }
+    }
+    return 0;
+  };
   let traspaso = 0;
   for (let i = 1; i <= 13; i++) {
     if (norm(transfer[i]).includes('TRASPASO')) {
@@ -817,6 +834,7 @@ async function fetchTesoreriaCuentas(gid, anio, mes) {
     kutxa: findVal('KUTXA'),
     cajamar: findVal('CAJAMAR'),
     bbva: findVal('BBVA'),
+    bbva_linea: findBlockVal('BBVA LINEA'),
     transferencia: findVal('TRANSFERENCIA'),
     total_caja: totalCaja,
     sabadell_linea: findVal('SABADELL LINEA'),
@@ -931,7 +949,7 @@ const fdate = d => d ? String(d).slice(0, 10) : '—';
 // ============================================================
 const BANK_PRODUCTS = [
   { id: 'sabadell_linea', banco: 'Banco Sabadell', producto: 'Línea de crédito', tipo: 'linea', limite: 30000, origen: 'Disponible automático desde Sabadell línea en B40:N42' },
-  { id: 'bbva_linea', banco: 'BBVA', producto: 'Línea de crédito', tipo: 'linea', limite: 40000, origen: 'Disponible automático desde BBVA en B40:N42' },
+  { id: 'bbva_linea', banco: 'BBVA', producto: 'Línea de crédito', tipo: 'linea', limite: 40000, origen: 'Disponible automático desde bloque BBVA LINEA' },
   { id: 'bbva_credito', banco: 'BBVA', producto: 'Crédito', tipo: 'prestamo', principal: 30000, origen: 'Principal inicial contratado' },
 ];
 function latestTesRecord() { const arr = (D.tes || []).slice().sort((a,b) => String(a.mes).localeCompare(String(b.mes))); return arr[arr.length - 1] || {}; }
@@ -943,7 +961,7 @@ function getBankProductsComputed() {
   const latest = latestTesRecord();
   const autoDisponible = {
     sabadell_linea: Math.abs(Number(latest.sabadell_linea) || 0),
-    bbva_linea: Math.abs(Number(latest.bbva) || 0),
+    bbva_linea: Math.abs(Number(latest.bbva_linea) || 0),
   };
   return BANK_PRODUCTS.map(p => {
     if (p.tipo === 'prestamo') return { ...p, limite: p.principal, dispuesto: p.principal, disponible: null, usoPct: null };
@@ -1377,7 +1395,7 @@ function renderTesCorporacion() {
     ['Transferencia', Number(t.transferencia)||0, 'H/I41 según mes', 'Banco'],
   ].filter(x => Math.abs(x[1]) > 0.0001);
   const lineas = [
-    ['BBVA línea disponible', Math.abs(Number(t.bbva)||0), 'H/G41 según mes', 'Línea crédito'],
+    ['BBVA línea disponible', Math.abs(Number(t.bbva_linea)||0), 'bloque BBVA LINEA', 'Línea crédito'],
     ['Sabadell línea disponible', Math.abs(Number(t.sabadell_linea)||0), 'L/M41 según mes', 'Línea crédito'],
   ].filter(x => Math.abs(x[1]) > 0.0001);
 

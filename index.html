@@ -85,11 +85,51 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 .uz{border:1.5px dashed var(--border2);border-radius:14px;padding:36px;text-align:center;cursor:pointer;transition:all 0.15s;background:var(--card)}
 .uz:hover,.uz.drag{border-color:var(--accent);background:var(--accent-light)}
 .ui{width:44px;height:44px;border-radius:22px;background:var(--accent-light);display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+
+.auth-gate{position:fixed;inset:0;background:linear-gradient(135deg,#111318,#1B2330);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
+.auth-gate.open{display:flex}
+.auth-card{width:420px;max-width:94vw;background:#fff;border-radius:18px;padding:28px;box-shadow:0 18px 60px rgba(0,0,0,.28)}
+.auth-title{font-size:22px;font-weight:700;letter-spacing:-.03em;margin-bottom:5px}.auth-sub{color:var(--text3);font-size:13px;line-height:1.5;margin-bottom:18px}
+.auth-error{display:none;margin-top:12px;background:var(--red-light);color:#7A1F1F;border:1px solid rgba(212,80,42,.18);padding:10px 12px;border-radius:10px;font-size:12px}
+.userbox{padding:10px 16px;border-top:1px solid rgba(255,255,255,.07);font-size:11px;color:rgba(255,255,255,.42)}
+.userbox strong{display:block;color:#fff;font-size:12px;margin-bottom:2px}.userbox button{margin-top:8px;border:1px solid rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.65);border-radius:7px;padding:5px 8px;font-size:11px;cursor:pointer}
+.sec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.sec-item{background:var(--bg2);border-radius:12px;padding:14px}.sec-item .k{font-size:12px;color:var(--text3);margin-bottom:5px}.sec-item .v{font-size:17px;font-weight:600}
+.role-pill{display:inline-flex;padding:2px 8px;border-radius:999px;background:var(--accent-light);color:#0C3E78;font-size:11px;font-weight:600}
+.masked{font-family:'DM Mono',monospace;letter-spacing:.02em}
+
 /* Debug panel */
 .dbg{background:#1a1a1a;color:#00ff88;font-family:'DM Mono',monospace;font-size:11px;padding:12px;border-radius:8px;margin-top:10px;max-height:200px;overflow-y:auto;white-space:pre-wrap;display:none}
 </style>
 </head>
 <body>
+
+<div class="auth-gate open" id="authGate">
+  <div class="auth-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+      <div class="logo-icon" style="margin:0"><svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M12 2C8 2 5 5 5 9c0 2.5 1.5 5 3 6.5L12 22l4-6.5C17.5 14 19 11.5 19 9c0-4-3-7-7-7z" stroke="#fff" stroke-width="1.5"/><circle cx="12" cy="9" r="2.5" fill="#fff"/></svg></div>
+      <div><div class="auth-title">Acceso seguro</div><div class="auth-sub" style="margin:0">Clínica Dental Dashboard</div></div>
+    </div>
+    <div class="auth-sub">Inicia sesión para acceder a tesorería, movimientos bancarios y datos financieros.</div>
+    <div class="fg"><label class="fl">Email</label><input class="fi" id="loginEmail" type="email" autocomplete="username" placeholder="usuario@clinicapuente.es"></div>
+    <div class="fg"><label class="fl">Contraseña</label><input class="fi" id="loginPass" type="password" autocomplete="current-password" placeholder="Contraseña"></div>
+    <button class="btn bp" style="width:100%;justify-content:center" onclick="login()">Entrar</button>
+    <div id="loginErr" class="auth-error"></div>
+    <div style="font-size:11px;color:var(--text3);line-height:1.45;margin-top:14px">Si es tu primer acceso, usa la contraseña temporal y cámbiala al entrar.</div>
+  </div>
+</div>
+
+<div class="modal-bg" id="pwdM">
+  <div class="modal">
+    <h2>🔐 Cambia tu contraseña temporal</h2>
+    <p>Tu usuario está marcado con contraseña de un solo uso. Crea una contraseña nueva antes de continuar.</p>
+    <div class="fg"><label class="fl">Nueva contraseña</label><input class="fi" id="newPass1" type="password" autocomplete="new-password"></div>
+    <div class="fg"><label class="fl">Repetir contraseña</label><input class="fi" id="newPass2" type="password" autocomplete="new-password"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+      <button class="btn bp" onclick="changeTemporaryPassword()">Guardar contraseña</button>
+    </div>
+  </div>
+</div>
+
 
 <div class="modal-bg" id="cfgM">
   <div class="modal">
@@ -133,7 +173,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
   <div class="nav-item" onclick="nav('objetivos',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="3"/><circle cx="8" cy="8" r="1" fill="currentColor" stroke="none"/></svg>Objetivos</div>
   <div class="nav-s">Datos</div>
   <div class="nav-item" onclick="nav('privados',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7V5a4 4 0 0 1 8 0v2"/><rect x="2" y="7" width="12" height="8" rx="2"/></svg>Datos privados</div>
-  <div class="nav-item" onclick="openCfg()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2" stroke-linecap="round"/></svg>Configuración</div>
+  <div class="nav-item" onclick="nav('config',this)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2" stroke-linecap="round"/></svg>Configuración</div>
   <div class="sb-foot" id="connSt">● Sin conectar</div>
 </aside>
 
@@ -474,11 +514,47 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
   </div>
 </div>
 
+
+<!-- CONFIGURACIÓN / SEGURIDAD -->
+<div class="page" id="page-config">
+  <div class="ph"><div class="pt">Configuración y seguridad</div><div class="ps">Usuarios, roles, auditoría y conexión Supabase</div></div>
+  <div class="metrics">
+    <div class="metric"><div class="ml">Usuario actual</div><div class="mv" id="cfg-user">—</div><div class="ms" id="cfg-email">—</div></div>
+    <div class="metric"><div class="ml">Rol</div><div class="mv" id="cfg-role">—</div><div class="ms">Permisos activos</div></div>
+    <div class="metric"><div class="ml">Sesión</div><div class="mv up">Activa</div><div class="ms">Supabase Auth</div></div>
+    <div class="metric"><div class="ml">IBAN visibles</div><div class="mv up">Ocultos</div><div class="ms">Solo últimos 4 dígitos</div></div>
+  </div>
+  <div class="card mb">
+    <div class="ch"><div class="ct" style="margin:0">Usuarios y roles</div><button class="btn bp" id="btn-refresh-users" onclick="loadUsersAdmin()">Actualizar usuarios</button></div>
+    <div id="admin-only-box">
+      <div class="filter-bar" style="align-items:end">
+        <input id="newUserEmail" placeholder="Email nuevo usuario" style="min-width:230px">
+        <input id="newUserName" placeholder="Nombre" style="min-width:160px">
+        <select id="newUserRole"><option value="lectura">Lectura</option><option value="validador">Validador</option><option value="finanzas">Finanzas</option><option value="admin">Admin</option></select>
+        <input id="newUserPass" placeholder="Contraseña temporal" value="JuanJeTQ@" style="min-width:150px">
+        <button class="btn bp" onclick="createUserAdmin()">Crear usuario</button>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Los administradores pueden crear usuarios. La contraseña temporal se marca como un solo uso.</div>
+    </div>
+    <div class="tw"><table><thead><tr><th>Email</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Última actualización</th></tr></thead><tbody id="tb-users"><tr><td colspan="5" style="color:var(--text3)">Cargando usuarios...</td></tr></tbody></table></div>
+  </div>
+  <div class="g2 mb">
+    <div class="card"><div class="ct">Roles</div><div class="sec-grid">
+      <div class="sec-item"><div class="k">Admin</div><div class="v">Todo</div><div class="ms">Crear usuarios, configurar reglas, validar, sincronizar.</div></div>
+      <div class="sec-item"><div class="k">Finanzas</div><div class="v">Gestión</div><div class="ms">Editar previsión, importar/sincronizar datos financieros.</div></div>
+      <div class="sec-item"><div class="k">Validador</div><div class="v">Validar</div><div class="ms">Validar movimientos e incidencias bancarias.</div></div>
+      <div class="sec-item"><div class="k">Lectura</div><div class="v">Solo ver</div><div class="ms">Consulta sin modificar datos.</div></div>
+    </div></div>
+    <div class="card"><div class="ct">Supabase</div><div class="al aw">⚠️ La anon key no es una contraseña, pero la escritura queda protegida por login, roles y RLS. Para producción, mantenemos el acceso con Supabase Auth obligatorio.</div><button class="btn bg2btn" onclick="openCfg()">Editar conexión Supabase</button></div>
+  </div>
+  <div class="card"><div class="ct">Auditoría reciente</div><div class="tw"><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Tabla</th><th>Detalle</th></tr></thead><tbody id="tb-audit"><tr><td colspan="5" style="color:var(--text3)">Sin eventos cargados.</td></tr></tbody></table></div></div>
+</div>
+
 </main>
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-29 cargado: BBVA cuenta separada de BBVA LINEA en productos bancarios");
+console.log("INDEX FINANCIERO v2026-04-30-30 cargado: seguridad con login, roles, RLS, usuarios admin e IBAN ocultos");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -899,6 +975,10 @@ function parseNum(v) {
 // SUPABASE
 // ============================================================
 let sb = null;
+let currentUser = null;
+let currentProfile = null;
+const INITIAL_ADMIN_EMAILS = ['jcarchenilla@cliniapuente.es','jmuniz@clinicapuente.es','apoveda@clinicapuente.es'];
+const ROLE_LABELS = { admin:'Admin', finanzas:'Finanzas', validador:'Validador', lectura:'Lectura' };
 function initSB() {
   const url = localStorage.getItem('cd_url');
   const key = localStorage.getItem('cd_key');
@@ -908,6 +988,7 @@ function initSB() {
     document.getElementById('connSt').style.color = '#1A9E72';
     return true;
   }
+  set('connSt', '● Configuración pendiente');
   return false;
 }
 function openCfg() {
@@ -916,13 +997,98 @@ function openCfg() {
   document.getElementById('cfgM').classList.add('open');
 }
 function closeCfg() { document.getElementById('cfgM').classList.remove('open'); }
-function saveCfg() {
+async function saveCfg() {
   const u = document.getElementById('cUrl').value.trim();
   const k = document.getElementById('cAnon').value.trim();
   if (!u || !k) { alert('Rellena ambos campos'); return; }
   localStorage.setItem('cd_url', u);
   localStorage.setItem('cd_key', k);
-  closeCfg(); initSB(); loadDB();
+  closeCfg(); initSB(); await bootAuth();
+}
+function hasRole(...roles) { return !!currentProfile && roles.includes(currentProfile.role); }
+function requireRole(...roles) { if (!hasRole(...roles)) { alert('No tienes permisos para esta acción.'); return false; } return true; }
+function authHeaderToken() { return sb?.auth?.getSession ? null : null; }
+async function bootAuth() {
+  if (!sb) { document.getElementById('authGate').classList.add('open'); setTimeout(openCfg, 400); return; }
+  const { data } = await sb.auth.getSession();
+  if (!data.session) { document.getElementById('authGate').classList.add('open'); return; }
+  currentUser = data.session.user;
+  await loadCurrentProfile();
+  document.getElementById('authGate').classList.remove('open');
+  updateUserUI();
+  if (currentProfile?.must_change_password) document.getElementById('pwdM').classList.add('open');
+  await loadDB();
+}
+async function login() {
+  if (!sb) { openCfg(); return; }
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPass').value;
+  const err = document.getElementById('loginErr'); err.style.display='none'; err.textContent='';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) { err.textContent = error.message || 'No se pudo iniciar sesión'; err.style.display='block'; return; }
+  currentUser = data.user;
+  await bootAuth();
+}
+async function logout() { if (sb) await sb.auth.signOut(); currentUser=null; currentProfile=null; location.reload(); }
+async function loadCurrentProfile() {
+  if (!currentUser) return;
+  const { data, error } = await sb.from('user_profiles').select('*').eq('id', currentUser.id).maybeSingle();
+  if (error) console.warn('No se pudo cargar user_profiles:', error.message);
+  currentProfile = data || { id: currentUser.id, email: currentUser.email, role: INITIAL_ADMIN_EMAILS.includes((currentUser.email||'').toLowerCase()) ? 'admin' : 'lectura', full_name: currentUser.email };
+}
+function updateUserUI() {
+  set('userEmail', currentUser?.email || '—');
+  set('userRole', ROLE_LABELS[currentProfile?.role] || currentProfile?.role || '—');
+  set('cfg-user', currentProfile?.full_name || currentUser?.email || '—');
+  set('cfg-email', currentUser?.email || '—');
+  set('cfg-role', ROLE_LABELS[currentProfile?.role] || currentProfile?.role || '—');
+  const adminBox = document.getElementById('admin-only-box');
+  if (adminBox) adminBox.style.display = hasRole('admin') ? 'block' : 'none';
+}
+async function changeTemporaryPassword() {
+  const p1 = document.getElementById('newPass1').value;
+  const p2 = document.getElementById('newPass2').value;
+  if (!p1 || p1.length < 8) return alert('La contraseña debe tener al menos 8 caracteres.');
+  if (p1 !== p2) return alert('Las contraseñas no coinciden.');
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  if (error) return alert(error.message);
+  await sb.from('user_profiles').update({ must_change_password:false, updated_at:new Date().toISOString() }).eq('id', currentUser.id);
+  currentProfile.must_change_password = false;
+  document.getElementById('pwdM').classList.remove('open');
+  alert('Contraseña actualizada.');
+}
+async function adminUsersCall(payload) {
+  const { data: sess } = await sb.auth.getSession();
+  const endpoint = (localStorage.getItem('cd_url') || '').replace(/\/$/, '') + '/functions/v1/admin-users';
+  const res = await fetch(endpoint, { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + sess.session.access_token }, body: JSON.stringify(payload) });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok || data.error) throw new Error(data.error || data.message || 'Error admin-users');
+  return data;
+}
+async function loadUsersAdmin() {
+  const tbody = document.getElementById('tb-users'); if (!tbody || !sb) return;
+  const { data, error } = await sb.from('user_profiles').select('email,full_name,role,is_active,must_change_password,updated_at').order('email');
+  if (error) { tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red)">${error.message}</td></tr>`; return; }
+  tbody.innerHTML = (data||[]).map(u => `<tr><td>${u.email}</td><td>${u.full_name||'—'}</td><td><span class="role-pill">${ROLE_LABELS[u.role]||u.role}</span></td><td>${u.is_active?'<span class="pill pg">Activo</span>':'<span class="pill pr">Inactivo</span>'} ${u.must_change_password?'<span class="pill pa">Temporal</span>':''}</td><td>${u.updated_at?new Date(u.updated_at).toLocaleString('es-ES'):'—'}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--text3)">Sin usuarios.</td></tr>';
+}
+async function createUserAdmin() {
+  if (!requireRole('admin')) return;
+  const email = document.getElementById('newUserEmail').value.trim();
+  const full_name = document.getElementById('newUserName').value.trim();
+  const role = document.getElementById('newUserRole').value;
+  const password = document.getElementById('newUserPass').value || 'JuanJeTQ@';
+  if (!email) return alert('Indica un email.');
+  try {
+    await adminUsersCall({ action:'create_user', email, full_name, role, password, must_change_password:true });
+    document.getElementById('newUserEmail').value=''; document.getElementById('newUserName').value='';
+    await loadUsersAdmin(); alert('Usuario creado con contraseña temporal.');
+  } catch (e) { alert(e.message); }
+}
+async function loadAuditLog() {
+  const tb = document.getElementById('tb-audit'); if (!tb || !sb) return;
+  const { data, error } = await sb.from('audit_log').select('*').order('created_at',{ascending:false}).limit(50);
+  if (error) { tb.innerHTML = `<tr><td colspan="5" style="color:var(--text3)">Auditoría no disponible: ${error.message}</td></tr>`; return; }
+  tb.innerHTML = (data||[]).map(a => `<tr><td>${a.created_at?new Date(a.created_at).toLocaleString('es-ES'):'—'}</td><td>${a.user_email||'—'}</td><td>${a.action||'—'}</td><td>${a.table_name||'—'}</td><td style="font-size:12px;color:var(--text3)">${a.record_id||''}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--text3)">Sin eventos.</td></tr>';
 }
 
 // ============================================================
@@ -933,6 +1099,7 @@ function nav(id, el) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
   el.classList.add('active');
+  if(id==='config'){ updateUserUI(); loadUsersAdmin(); loadAuditLog(); }
 }
 
 // ============================================================
@@ -995,6 +1162,8 @@ function mkChart(id, type, labels, datasets, extra = {}) {
 
 function set(id, v) { const e = document.getElementById(id); if (e) e.innerHTML = v; }
 function setC(id, c) { const e = document.getElementById(id); if (e) e.className = c; }
+function maskIban(v){ const s=String(v||'').replace(/\s+/g,'').trim(); if(!s) return ''; if(/^ES\d{2}[A-Z0-9]{20}$/i.test(s)) return 'ES•• •••• •••• •••• •••• ' + s.slice(-4); if(s.length>10 && /[A-Z]{2}\d{2}/i.test(s)) return '•••• ' + s.slice(-4); return s; }
+function safeAccount(v){ const m=maskIban(v); return m ? `<span class="masked">${m}</span>` : ''; }
 
 // ============================================================
 // DATA STORE
@@ -1006,6 +1175,7 @@ let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [], ingre
 // ============================================================
 async function syncSheets() {
   if (!sb) { alert('Configura Supabase primero'); openCfg(); return; }
+  if (!requireRole('admin','finanzas')) return;
   const btn = document.getElementById('sBtn');
   btn.classList.add('syncing');
   btn.innerHTML = '<svg class="si" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Sincronizando...';
@@ -1121,7 +1291,10 @@ async function loadDB() {
   if (ls) set('lsync', 'Última sync: ' + ls);
   await loadPrevConfigFromSupabase();
   renderAll();
+  loadUsersAdmin();
+  loadAuditLog();
 }
+
 
 // ============================================================
 // RENDER
@@ -1621,7 +1794,7 @@ function renderBankConnections() {
     const validUntil = c.consent_expires_at ? new Date(c.consent_expires_at).toLocaleDateString('es-ES') : '—';
     const status = c.status || 'pendiente';
     const pill = status === 'connected' || status === 'active' ? 'pg' : (status === 'error' ? 'pr' : 'pa');
-    return `<tr><td style="font-weight:600">${c.banco || c.institution_id || 'Banco'}</td><td>${c.empresa || ''}</td><td>${c.alias || ''}</td><td><span class="pill ${pill}">${status}</span></td><td>${validUntil}</td><td>${c.last_sync_at ? new Date(c.last_sync_at).toLocaleString('es-ES') : '—'}</td><td><button class="eb" onclick="syncBankConnection('${c.id}')">Actualizar</button></td></tr>`;
+    return `<tr><td style="font-weight:600">${c.banco || c.institution_id || 'Banco'}</td><td>${c.empresa || ''}</td><td>${safeAccount(c.alias || c.account_iban || c.cuenta || '')}</td><td><span class="pill ${pill}">${status}</span></td><td>${validUntil}</td><td>${c.last_sync_at ? new Date(c.last_sync_at).toLocaleString('es-ES') : '—'}</td><td><button class="eb" onclick="syncBankConnection('${c.id}')">Actualizar</button></td></tr>`;
   }).join('');
 }
 
@@ -1899,7 +2072,7 @@ function renderMovimientos() {
     const catOptions = [''].concat(cats).map(c => `<option value="${c}" ${String(m.cuenta_asociada || m.categoria_asociada || '')===c?'selected':''}>${c || 'Sin cuenta'}</option>`).join('');
     return `<tr>
       <td>${fdate(m.fecha)}</td><td>${m.empresa || '—'}</td>
-      <td><strong>${m.banco || '—'}</strong><br><span style="font-size:12px;color:var(--text3)">${m.cuenta || ''}</span></td>
+      <td><strong>${m.banco || '—'}</strong><br><span style="font-size:12px;color:var(--text3)">${safeAccount(m.cuenta)}</span></td>
       <td>${m.concepto || '—'}<br><span style="font-size:12px;color:var(--text3)">${m.referencia || ''}</span></td>
       <td><select onchange="setMovimientoCategoria('${m.id}',this.value)" style="width:150px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px">${catOptions}</select><br>${cls} <button class="eb" style="font-size:11px;padding:3px 7px;margin-top:4px" onclick="learnRuleFromMovimiento('${m.id}')">Aprender</button></td>
       <td class="tr" style="font-weight:700;color:${(Number(m.importe)||0)>=0?'var(--green)':'var(--red)'}">${eur(Number(m.importe)||0)}</td>
@@ -2421,6 +2594,7 @@ function ddrop(e) { e.preventDefault(); document.getElementById('uz').classList.
 async function handleXLS(file) {
   if (!file) return;
   if (!sb) { alert('Configura Supabase primero'); openCfg(); return; }
+  if (!requireRole('admin','finanzas')) return;
   const XLSX = await loadXLSX();
   set('uz-txt', '<div style="display:flex;align-items:center;gap:10px;justify-content:center"><div class="sp"></div><span>Procesando ' + file.name + '...</span></div>');
   const reader = new FileReader();
@@ -2478,7 +2652,7 @@ async function loadXLSX() {
 // ============================================================
 // INIT
 // ============================================================
-if (!initSB()) { setTimeout(openCfg, 600); } else { loadDB(); }
+if (!initSB()) { document.getElementById('authGate').classList.add('open'); setTimeout(openCfg, 600); } else { bootAuth(); }
 </script>
 </body>
 </html>

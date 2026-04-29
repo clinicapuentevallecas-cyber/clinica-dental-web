@@ -229,7 +229,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 <!-- MOVIMIENTOS BANCARIOS -->
 <div class="page" id="page-movimientos">
   <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-    <div><div class="pt">Movimientos bancarios</div><div class="ps">Subida diaria de extractos bancarios. Los movimientos nuevos quedan pendientes de validar y pueden marcarse con incidencia.</div></div>
+    <div><div class="pt">Movimientos bancarios</div><div class="ps">Subida diaria de extractos bancarios. El banco confirma tesorería; Excel mantiene ingresos y gastos. Los movimientos se concilian para evitar duplicados.</div></div>
     <div id="empresa-bar-m" class="empresa-bar" style="margin-bottom:0"></div>
   </div>
   <div class="card mb">
@@ -274,6 +274,10 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div class="metric"><div class="ml">Intercompany</div><div class="mv" id="mb-ic-total">—</div><div class="ms" id="mb-ic-s">Dividendos y préstamos internos</div></div>
     <div class="metric"><div class="ml">Dividendos Corp → Bridge</div><div class="mv up" id="mb-ic-div">—</div><div class="ms">Excluido de resultado global</div></div>
     <div class="metric"><div class="ml">Préstamo Bridge → Vallecas</div><div class="mv" id="mb-ic-loan">—</div><div class="ms">Control intersocietario</div></div>
+    <div class="metric"><div class="ml">Conciliados</div><div class="mv up" id="mb-recon-ok">—</div><div class="ms">Vinculados a Excel o intercompany</div></div>
+    <div class="metric"><div class="ml">Sin conciliar</div><div class="mv dn" id="mb-recon-pend">—</div><div class="ms">Revisar antes de crear gasto/ingreso</div></div>
+    <div class="metric"><div class="ml">Duplicados evitados</div><div class="mv" id="mb-recon-dup">—</div><div class="ms">Banco confirma, no duplica resultado</div></div>
+    <div class="metric"><div class="ml">No operativo</div><div class="mv" id="mb-recon-noop">—</div><div class="ms">Traspasos, financiación o ajustes</div></div>
   </div>
   <div class="g2 mb">
     <div class="card"><div class="ct">Validación por estado</div><div style="height:220px;position:relative"><canvas id="c-mov-estados"></canvas></div></div>
@@ -299,13 +303,21 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     </div>
     <div class="tw"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Origen</th><th>Destino</th><th>Concepto</th><th class="tr">Importe</th><th>Estado</th></tr></thead><tbody id="tb-intercompany"></tbody></table></div>
   </div>
+  <div class="card mb">
+    <div class="ch" style="gap:10px;flex-wrap:wrap;align-items:flex-start">
+      <div><div class="ct" style="margin:0">Conciliación banco ↔ Excel</div><div style="font-size:12px;color:var(--text3);margin-top:4px">El Excel crea ingresos/gastos. El banco confirma cobros y pagos reales. Un movimiento conciliado no vuelve a crear ingreso ni gasto: evita duplicidades en el resultado.</div></div>
+      <button class="eb" style="margin-left:auto" onclick="autoSuggestReconciliation(true)">Buscar coincidencias</button>
+    </div>
+    <div class="al" style="background:var(--accent-light);color:#0C3E78;border:1px solid rgba(27,95,168,.15);margin-bottom:12px">Regla de control: <strong>Banco = tesorería real</strong>. <strong>Excel = clasificación económica</strong>. La conciliación une ambos mundos sin duplicar importes.</div>
+    <div class="tw"><table><thead><tr><th>Movimiento banco</th><th class="tr">Importe</th><th>Sugerencia</th><th>Impacto</th><th>Acción</th></tr></thead><tbody id="tb-conciliacion"></tbody></table></div>
+  </div>
   <div class="card">
     <div class="ch" style="gap:10px;flex-wrap:wrap">
       <input class="inp" id="mb-q" placeholder="Buscar concepto, banco, cuenta..." oninput="renderMovimientos()">
-      <select class="sel" id="mb-estado" onchange="renderMovimientos()"><option value="all">Todos los estados</option><option value="pendiente">Pendientes</option><option value="nuevo">Nuevos</option><option value="validado">Validados</option><option value="incidencia">Con incidencia</option><option value="sin_clasificar">Sin clasificar</option><option value="auto">Clasificados auto</option><option value="intercompany">Intercompany</option><option value="dividendo">Dividendos Corp → Bridge</option><option value="prestamo_intercompany">Préstamos Bridge → Vallecas</option></select>
+      <select class="sel" id="mb-estado" onchange="renderMovimientos()"><option value="all">Todos los estados</option><option value="pendiente">Pendientes</option><option value="nuevo">Nuevos</option><option value="validado">Validados</option><option value="incidencia">Con incidencia</option><option value="sin_clasificar">Sin clasificar</option><option value="auto">Clasificados auto</option><option value="intercompany">Intercompany</option><option value="dividendo">Dividendos Corp → Bridge</option><option value="prestamo_intercompany">Préstamos Bridge → Vallecas</option><option value="sin_conciliar">Sin conciliar</option><option value="conc_gasto">Conciliado con gasto</option><option value="conc_ingreso">Conciliado con ingreso</option><option value="conc_intercompany">Conciliado intercompany</option><option value="no_operativo">No operativo / ignorado</option></select>
       <span class="filter-tag" id="mb-filter-info"></span>
     </div>
-    <div class="tw"><table><thead><tr><th>Fecha</th><th>Empresa</th><th>Banco / cuenta</th><th>Concepto</th><th>Cuenta asociada</th><th>Intercompany</th><th>Origen → destino</th><th class="tr">Importe</th><th class="tr">Saldo</th><th>Estado</th><th>Validado</th><th>Incidencia</th><th>Nota</th></tr></thead><tbody id="tb-movimientos"></tbody></table></div>
+    <div class="tw"><table><thead><tr><th>Fecha</th><th>Empresa</th><th>Banco / cuenta</th><th>Concepto</th><th>Cuenta asociada</th><th>Intercompany</th><th>Conciliación</th><th>Impacto</th><th>Origen → destino</th><th class="tr">Importe</th><th class="tr">Saldo</th><th>Estado</th><th>Validado</th><th>Incidencia</th><th>Nota</th></tr></thead><tbody id="tb-movimientos"></tbody></table></div>
   </div>
 </div>
 
@@ -564,7 +576,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-30-31 cargado: intercompany opcion 2 con dividendos y prestamos intersocietarios");
+console.log("INDEX FINANCIERO v2026-04-30-32 cargado: conciliacion banco-excel, intercompany y control anti-duplicados");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1178,7 +1190,7 @@ function safeAccount(v){ const m=maskIban(v); return m ? `<span class="masked">$
 // ============================================================
 // DATA STORE
 // ============================================================
-let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [], ingresosExternos: [], movimientos: [], reglasBanco: [], bankConnections: [] };
+let D = { cajas: [], gastos: [], fins: [], devs: [], workers: [], tes: [], ingresosExternos: [], movimientos: [], reglasBanco: [], bankConnections: [], conciliaciones: [] };
 
 // ============================================================
 // SYNC FROM GOOGLE SHEETS
@@ -1891,12 +1903,16 @@ function setMovimientoIntercompany(id, tipo) {
     m.tipo_intercompany = '';
     m.empresa_origen = '';
     m.empresa_destino = '';
-    m.impacto_resultado = true;
+    m.impacto_resultado = false;
+    m.estado_conciliacion = 'sin_conciliar';
+    m.entidad_relacionada_tipo = '';
+    m.entidad_relacionada_id = '';
+    m.entidad_relacionada_label = '';
     m.tipo_movimiento = Number(m.importe) >= 0 ? 'ingreso' : 'gasto';
   } else if (tipo === 'dividendo') {
-    Object.assign(m, { es_intercompany:true, tipo_intercompany:'dividendo', empresa_origen:'Corporacion', empresa_destino:'Bridge', tipo_movimiento:'intercompany', cuenta_asociada:'Reparto de dividendos', categoria_asociada:'Reparto de dividendos', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
+    Object.assign(m, { estado_conciliacion:'conc_intercompany', entidad_relacionada_tipo:'intercompany', es_intercompany:true, tipo_intercompany:'dividendo', empresa_origen:'Corporacion', empresa_destino:'Bridge', tipo_movimiento:'intercompany', cuenta_asociada:'Reparto de dividendos', categoria_asociada:'Reparto de dividendos', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
   } else if (tipo === 'prestamo_intercompany') {
-    Object.assign(m, { es_intercompany:true, tipo_intercompany:'prestamo_intercompany', empresa_origen:'Bridge', empresa_destino:'Vallecas Las', tipo_movimiento:'intercompany', cuenta_asociada:'Préstamo intersocietario', categoria_asociada:'Préstamo intersocietario', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
+    Object.assign(m, { estado_conciliacion:'conc_intercompany', entidad_relacionada_tipo:'intercompany', es_intercompany:true, tipo_intercompany:'prestamo_intercompany', empresa_origen:'Bridge', empresa_destino:'Vallecas Las', tipo_movimiento:'intercompany', cuenta_asociada:'Préstamo intersocietario', categoria_asociada:'Préstamo intersocietario', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
   }
   m.estado_clasificacion = tipo ? 'intercompany' : 'sin_clasificar';
   saveBankMovementsSupabase();
@@ -1934,10 +1950,10 @@ function applyBankRulesToMovement(m, overwrite=false) {
   m.regla_id = rule.id;
   m.estado_clasificacion = 'auto';
   if (rule.tipo === 'dividendo') {
-    Object.assign(m, { es_intercompany:true, tipo_intercompany:'dividendo', empresa_origen:'Corporacion', empresa_destino:'Bridge', tipo_movimiento:'intercompany', cuenta_asociada:'Reparto de dividendos', categoria_asociada:'Reparto de dividendos', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
+    Object.assign(m, { estado_conciliacion:'conc_intercompany', entidad_relacionada_tipo:'intercompany', es_intercompany:true, tipo_intercompany:'dividendo', empresa_origen:'Corporacion', empresa_destino:'Bridge', tipo_movimiento:'intercompany', cuenta_asociada:'Reparto de dividendos', categoria_asociada:'Reparto de dividendos', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
   }
   if (rule.tipo === 'prestamo_intercompany') {
-    Object.assign(m, { es_intercompany:true, tipo_intercompany:'prestamo_intercompany', empresa_origen:'Bridge', empresa_destino:'Vallecas Las', tipo_movimiento:'intercompany', cuenta_asociada:'Préstamo intersocietario', categoria_asociada:'Préstamo intersocietario', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
+    Object.assign(m, { estado_conciliacion:'conc_intercompany', entidad_relacionada_tipo:'intercompany', es_intercompany:true, tipo_intercompany:'prestamo_intercompany', empresa_origen:'Bridge', empresa_destino:'Vallecas Las', tipo_movimiento:'intercompany', cuenta_asociada:'Préstamo intersocietario', categoria_asociada:'Préstamo intersocietario', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
   }
   return m;
 }
@@ -2057,6 +2073,12 @@ function normalizeBankMovement(row, fileName) {
     estado_clasificacion: 'sin_clasificar',
     proveedor_asociado: '',
     regla_id: '',
+    estado_conciliacion: 'sin_conciliar',
+    entidad_relacionada_tipo: '',
+    entidad_relacionada_id: '',
+    entidad_relacionada_label: '',
+    impacto_resultado: false,
+    impacto_tesoreria: true,
     archivo_origen: fileName || '',
     uploaded_at: new Date().toISOString()
   };
@@ -2097,6 +2119,111 @@ async function handleBankMovementsFile(file) {
     const inp = document.getElementById('bank-file'); if (inp) inp.value = '';
   }
 }
+function getIngresoId(i) {
+  const raw = [i.empresa||'', i.fecha||'', i.factura||'', i.concepto||'', i.proveedor||'', Number(i.importe)||0].join('|');
+  try { return 'ing_' + btoa(unescape(encodeURIComponent(raw))).replace(/[^a-zA-Z0-9]/g,'').slice(0,48); }
+  catch(e) { return 'ing_' + raw.replace(/[^a-zA-Z0-9]/g,'_').slice(0,48); }
+}
+function daysBetween(a,b) {
+  const da = new Date(String(a||'').slice(0,10)); const db = new Date(String(b||'').slice(0,10));
+  if (isNaN(da) || isNaN(db)) return 9999;
+  return Math.abs(Math.round((da-db)/86400000));
+}
+function textScoreMove(a,b) {
+  const A = normTxt(a || ''); const B = normTxt(b || '');
+  if (!A || !B) return 0;
+  let score = 0;
+  const words = B.split(/\s+/).filter(w => w.length > 3).slice(0,8);
+  words.forEach(w => { if (A.includes(w)) score += 2; });
+  if (A.includes(B) || B.includes(A)) score += 8;
+  return score;
+}
+function getMovementReconStatus(m) {
+  if (!m) return 'sin_conciliar';
+  if (m.es_intercompany || m.tipo_movimiento === 'intercompany') return 'conc_intercompany';
+  if (m.estado_conciliacion && m.estado_conciliacion !== 'pendiente') return m.estado_conciliacion;
+  if (m.entidad_relacionada_tipo === 'gasto') return 'conc_gasto';
+  if (m.entidad_relacionada_tipo === 'ingreso') return 'conc_ingreso';
+  if (m.tipo_movimiento === 'traspaso' || m.tipo_movimiento === 'financiacion' || m.tipo_movimiento === 'no_operativo') return 'no_operativo';
+  return 'sin_conciliar';
+}
+function getMovementReconLabel(m) {
+  const st = getMovementReconStatus(m);
+  if (st === 'conc_gasto') return '<span class="pill pg">Gasto conciliado</span>';
+  if (st === 'conc_ingreso') return '<span class="pill pg">Ingreso conciliado</span>';
+  if (st === 'conc_intercompany') return '<span class="pill pb">Intercompany</span>';
+  if (st === 'no_operativo') return '<span class="pill pz">No operativo</span>';
+  return '<span class="pill pr">Sin conciliar</span>';
+}
+function getImpactLabel(m) {
+  const st = getMovementReconStatus(m);
+  if (st === 'sin_conciliar') return '<span class="pill pa">Pendiente</span>';
+  if (st === 'conc_intercompany') return '<span class="pill pb">Tesorería + balance</span>';
+  if (st === 'no_operativo') return '<span class="pill pz">Solo tesorería</span>';
+  return '<span class="pill pg">Solo confirma pago/cobro</span>';
+}
+function movementReconciliationSuggestion(m) {
+  if (!m) return null;
+  if (getMovementReconStatus(m) !== 'sin_conciliar') return null;
+  const amount = Math.abs(Number(m.importe)||0);
+  if (!amount) return null;
+  const emp = m.empresa || empresaActual;
+  const txt = [m.concepto, m.referencia, m.banco].join(' ');
+  if ((Number(m.importe)||0) < 0) {
+    const candidates = filterEmpresaFor(D.gastos || [], emp, 'empresa').map(g => {
+      const diff = Math.abs(Math.abs(Number(g.importe)||0) - amount);
+      if (diff > 1) return null;
+      const d = daysBetween(m.fecha, getGastoFechaPago(g) || g.fecha);
+      if (d > 45) return null;
+      const score = 30 - Math.min(d,30) + textScoreMove(txt, [g.concepto,g.proveedor,g.fuente_gasto].join(' ')) - diff;
+      return { tipo:'gasto', id:gastoKey(g), item:g, score, label:`${g.proveedor || 'Proveedor'} · ${g.concepto || g.fuente_gasto || 'Gasto'} · ${fdate(g.fecha)}` };
+    }).filter(Boolean).sort((a,b)=>b.score-a.score);
+    return candidates[0] || null;
+  }
+  const candidates = filterEmpresaFor(allIngresosOperativos(), emp, 'empresa').map(i => {
+    const diff = Math.abs(Math.abs(Number(i.importe)||0) - amount);
+    if (diff > 1) return null;
+    const d = daysBetween(m.fecha, i.fecha);
+    if (d > 45) return null;
+    const score = 30 - Math.min(d,30) + textScoreMove(txt, [i.factura,i.concepto,i.proveedor,i.forma_pago].join(' ')) - diff;
+    return { tipo:'ingreso', id:getIngresoId(i), item:i, score, label:`${i.factura || i.concepto || 'Ingreso'} · ${i.proveedor || i.forma_pago || ''} · ${fdate(i.fecha)}` };
+  }).filter(Boolean).sort((a,b)=>b.score-a.score);
+  return candidates[0] || null;
+}
+async function reconcileMovement(id, tipo, relId='', label='') {
+  const m = (D.movimientos || []).find(x => x.id === id); if (!m) return;
+  if (tipo === 'gasto') Object.assign(m, { estado_conciliacion:'conc_gasto', entidad_relacionada_tipo:'gasto', entidad_relacionada_id:relId, entidad_relacionada_label:label, impacto_resultado:false, impacto_tesoreria:true, estado_validacion:'validado', validado:true, es_nuevo:false });
+  else if (tipo === 'ingreso') Object.assign(m, { estado_conciliacion:'conc_ingreso', entidad_relacionada_tipo:'ingreso', entidad_relacionada_id:relId, entidad_relacionada_label:label, impacto_resultado:false, impacto_tesoreria:true, estado_validacion:'validado', validado:true, es_nuevo:false });
+  else if (tipo === 'no_operativo') Object.assign(m, { estado_conciliacion:'no_operativo', entidad_relacionada_tipo:'no_operativo', entidad_relacionada_id:'', entidad_relacionada_label:label || 'No operativo / ignorado', impacto_resultado:false, impacto_tesoreria:true, estado_validacion:'validado', validado:true, es_nuevo:false, tipo_movimiento:'no_operativo' });
+  else if (tipo === 'clear') Object.assign(m, { estado_conciliacion:'sin_conciliar', entidad_relacionada_tipo:'', entidad_relacionada_id:'', entidad_relacionada_label:'', impacto_resultado:false, impacto_tesoreria:true, validado:false, estado_validacion:'pendiente' });
+  await saveBankMovementsSupabase(); renderMovimientos();
+}
+async function acceptReconSuggestion(id) {
+  const m = (D.movimientos || []).find(x => x.id === id); if (!m) return;
+  const sug = movementReconciliationSuggestion(m);
+  if (!sug) { alert('No hay una coincidencia clara para este movimiento'); return; }
+  await reconcileMovement(id, sug.tipo, sug.id, sug.label);
+}
+async function autoSuggestReconciliation(markOnly=false) {
+  (D.movimientos || []).forEach(m => {
+    if (getMovementReconStatus(m) !== 'sin_conciliar') return;
+    const sug = movementReconciliationSuggestion(m);
+    if (sug) { m.sugerencia_conciliacion_tipo = sug.tipo; m.sugerencia_conciliacion_id = sug.id; m.sugerencia_conciliacion_label = sug.label; }
+  });
+  await saveBankMovementsSupabase(); renderMovimientos();
+}
+function renderConciliacionTable(all) {
+  const tb = document.getElementById('tb-conciliacion'); if (!tb) return;
+  const rows = (all || []).slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).slice(0,120);
+  tb.innerHTML = rows.map(m => {
+    const st = getMovementReconStatus(m);
+    const sug = movementReconciliationSuggestion(m) || (m.sugerencia_conciliacion_tipo ? { tipo:m.sugerencia_conciliacion_tipo, id:m.sugerencia_conciliacion_id, label:m.sugerencia_conciliacion_label } : null);
+    const suggestion = st === 'sin_conciliar' ? (sug ? `<span class="pill pa">Sugerido ${sug.tipo}</span><br><span style="font-size:12px;color:var(--text3)">${sug.label || ''}</span>` : '<span class="pill pr">Sin coincidencia</span><br><span style="font-size:12px;color:var(--text3)">No crear gasto/ingreso automáticamente</span>') : `${getMovementReconLabel(m)}<br><span style="font-size:12px;color:var(--text3)">${m.entidad_relacionada_label || intercompanyTypeLabel(m.tipo_intercompany) || 'Validado'}</span>`;
+    const actions = st === 'sin_conciliar' ? `${sug ? `<button class="eb" onclick="acceptReconSuggestion('${m.id}')">Conciliar</button>` : ''} <button class="eb" onclick="reconcileMovement('${m.id}','no_operativo','','No operativo')">No operativo</button>` : `<button class="eb" onclick="reconcileMovement('${m.id}','clear')">Deshacer</button>`;
+    return `<tr><td><strong>${fdate(m.fecha)}</strong> · ${m.empresa || '—'}<br><span style="font-size:12px;color:var(--text3)">${m.concepto || '—'}</span></td><td class="tr" style="font-weight:700;color:${(Number(m.importe)||0)>=0?'var(--green)':'var(--red)'}">${eur(Number(m.importe)||0)}</td><td>${suggestion}</td><td>${getImpactLabel(m)}</td><td>${actions}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:22px">Sin movimientos para conciliar.</td></tr>';
+}
+
 function filterBankMovements() {
   const q = normTxt(document.getElementById('mb-q')?.value || '');
   const st = document.getElementById('mb-estado')?.value || 'all';
@@ -2111,6 +2238,11 @@ function filterBankMovements() {
   if (st === 'intercompany') rows = rows.filter(m => m.es_intercompany || m.tipo_movimiento === 'intercompany');
   if (st === 'dividendo') rows = rows.filter(m => m.tipo_intercompany === 'dividendo');
   if (st === 'prestamo_intercompany') rows = rows.filter(m => m.tipo_intercompany === 'prestamo_intercompany');
+  if (st === 'sin_conciliar') rows = rows.filter(m => getMovementReconStatus(m) === 'sin_conciliar');
+  if (st === 'conc_gasto') rows = rows.filter(m => getMovementReconStatus(m) === 'conc_gasto');
+  if (st === 'conc_ingreso') rows = rows.filter(m => getMovementReconStatus(m) === 'conc_ingreso');
+  if (st === 'conc_intercompany') rows = rows.filter(m => getMovementReconStatus(m) === 'conc_intercompany');
+  if (st === 'no_operativo') rows = rows.filter(m => getMovementReconStatus(m) === 'no_operativo');
   return rows;
 }
 function setMovimientoField(id, field, value) {
@@ -2139,12 +2271,17 @@ function renderMovimientos() {
   const val = all.filter(m => m.validado).length;
   const inc = all.filter(m => m.incidencia).length;
   const inter = all.filter(m => m.es_intercompany || m.tipo_movimiento === 'intercompany');
+  const reconOk = all.filter(m => getMovementReconStatus(m) !== 'sin_conciliar').length;
+  const reconPend = all.filter(m => getMovementReconStatus(m) === 'sin_conciliar').length;
+  const reconDup = all.filter(m => ['conc_gasto','conc_ingreso','conc_intercompany'].includes(getMovementReconStatus(m))).length;
+  const reconNoop = all.filter(m => getMovementReconStatus(m) === 'no_operativo').length;
   const divs = inter.filter(m => m.tipo_intercompany === 'dividendo').reduce((s,m)=>s+Math.abs(Number(m.importe)||0),0);
   const loans = inter.filter(m => m.tipo_intercompany === 'prestamo_intercompany').reduce((s,m)=>s+Math.abs(Number(m.importe)||0),0);
   set('mb-total', all.length); set('mb-total-s', empresaActual === 'Global' ? 'Todas las empresas' : empresaActual);
   set('mb-pend', pend); set('mb-val', val); set('mb-inc', inc);
   set('mb-ic-total', eur(inter.reduce((s,m)=>s+Math.abs(Number(m.importe)||0),0))); set('mb-ic-s', inter.length + ' movimiento(s)');
   set('mb-ic-div', eur(divs)); set('mb-ic-loan', eur(loans));
+  set('mb-recon-ok', reconOk); set('mb-recon-pend', reconPend); set('mb-recon-dup', reconDup); set('mb-recon-noop', reconNoop);
   set('mb-filter-info', `${rows.length} mostrados`);
   mkChart('c-mov-estados', 'doughnut', ['Pendientes','Validados','Incidencias'], [{ data: [pend, val, inc], backgroundColor: ['#D4502A','#1A9E72','#B87318'], borderWidth: 0 }]);
   const pos = validatedBankPosition(all);
@@ -2162,6 +2299,8 @@ function renderMovimientos() {
       <td>${m.concepto || '—'}<br><span style="font-size:12px;color:var(--text3)">${m.referencia || ''}</span></td>
       <td><select onchange="setMovimientoCategoria('${m.id}',this.value)" style="width:150px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px">${catOptions}</select><br>${cls} <button class="eb" style="font-size:11px;padding:3px 7px;margin-top:4px" onclick="learnRuleFromMovimiento('${m.id}')">Aprender</button></td>
       <td><select onchange="setMovimientoIntercompany('${m.id}',this.value)" style="width:185px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px">${icOptions}</select></td>
+      <td>${getMovementReconLabel(m)}<br><span style="font-size:12px;color:var(--text3)">${m.entidad_relacionada_label || ''}</span></td>
+      <td>${getImpactLabel(m)}</td>
       <td><span style="font-size:12px;color:var(--text3)">${m.empresa_origen || '—'} → ${m.empresa_destino || '—'}</span></td>
       <td class="tr" style="font-weight:700;color:${(Number(m.importe)||0)>=0?'var(--green)':'var(--red)'}">${eur(Number(m.importe)||0)}</td>
       <td class="tr">${m.saldo ? eur(Number(m.saldo)||0) : '—'}</td>
@@ -2170,8 +2309,9 @@ function renderMovimientos() {
       <td><input type="checkbox" ${m.incidencia ? 'checked' : ''} onchange="setMovimientoField('${m.id}','incidencia',this.checked)"></td>
       <td><input value="${String(m.nota_incidencia || '').replace(/"/g,'&quot;')}" onchange="setMovimientoField('${m.id}','nota_incidencia',this.value)" placeholder="Nota" style="width:150px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="13" style="text-align:center;color:var(--text3);padding:26px">Sin movimientos bancarios. Sube un Excel o CSV para empezar a validar la tesorería.</td></tr>';
+  }).join('') || '<tr><td colspan="15" style="text-align:center;color:var(--text3);padding:26px">Sin movimientos bancarios. Sube un Excel o CSV para empezar a validar la tesorería.</td></tr>';
   renderIntercompanyTable(all);
+  renderConciliacionTable(all);
 }
 function exportBankMovementsCSV() {
   const rows = filterBankMovements();

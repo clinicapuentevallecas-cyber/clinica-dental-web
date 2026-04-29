@@ -271,6 +271,9 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div class="metric"><div class="ml">Pendientes validar</div><div class="mv dn" id="mb-pend">—</div><div class="ms">Nuevos o no revisados</div></div>
     <div class="metric"><div class="ml">Validados</div><div class="mv up" id="mb-val">—</div><div class="ms">Movimientos revisados</div></div>
     <div class="metric"><div class="ml">Incidencias</div><div class="mv dn" id="mb-inc">—</div><div class="ms">Movimientos para revisar</div></div>
+    <div class="metric"><div class="ml">Intercompany</div><div class="mv" id="mb-ic-total">—</div><div class="ms" id="mb-ic-s">Dividendos y préstamos internos</div></div>
+    <div class="metric"><div class="ml">Dividendos Corp → Bridge</div><div class="mv up" id="mb-ic-div">—</div><div class="ms">Excluido de resultado global</div></div>
+    <div class="metric"><div class="ml">Préstamo Bridge → Vallecas</div><div class="mv" id="mb-ic-loan">—</div><div class="ms">Control intersocietario</div></div>
   </div>
   <div class="g2 mb">
     <div class="card"><div class="ct">Validación por estado</div><div style="height:220px;position:relative"><canvas id="c-mov-estados"></canvas></div></div>
@@ -284,18 +287,25 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
     <div class="tw"><table><thead><tr><th>Texto contiene</th><th>Empresa</th><th>Banco</th><th>Tipo</th><th>Cuenta destino</th><th>Proveedor</th><th>Activa</th></tr></thead><tbody id="tb-reglas-banco"></tbody></table></div>
     <div class="ch" style="gap:8px;flex-wrap:wrap;margin-top:12px">
       <input class="inp" id="rule-text" placeholder="Ej: AEAT, IONOS, NOMINA...">
-      <select class="sel" id="rule-tipo"><option value="gasto">Gasto</option><option value="ingreso">Ingreso</option><option value="traspaso">Traspaso interno</option><option value="financiacion">Financiación</option><option value="impuesto">Impuesto</option></select>
+      <select class="sel" id="rule-tipo"><option value="gasto">Gasto</option><option value="ingreso">Ingreso</option><option value="traspaso">Traspaso interno</option><option value="financiacion">Financiación</option><option value="impuesto">Impuesto</option><option value="dividendo">Dividendo Corp → Bridge</option><option value="prestamo_intercompany">Préstamo Bridge → Vallecas</option></select>
       <select class="sel" id="rule-cat"></select>
       <button class="btn bg2btn" onclick="addBankRuleFromForm()">Añadir regla</button>
     </div>
   </div>
+  <div class="card mb">
+    <div class="ch" style="gap:10px;flex-wrap:wrap;align-items:flex-start">
+      <div><div class="ct" style="margin:0">Operaciones intercompany</div><div style="font-size:12px;color:var(--text3);margin-top:4px">Las transferencias Corporación → Bridge se tratan como reparto de dividendos. Las transferencias Bridge → Vallecas Las se tratan como préstamo intersocietario. No impactan resultado global; sí impactan tesorería individual.</div></div>
+      <button class="eb" style="margin-left:auto" onclick="aplicarIntercompany(true)">Detectar intercompany</button>
+    </div>
+    <div class="tw"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Origen</th><th>Destino</th><th>Concepto</th><th class="tr">Importe</th><th>Estado</th></tr></thead><tbody id="tb-intercompany"></tbody></table></div>
+  </div>
   <div class="card">
     <div class="ch" style="gap:10px;flex-wrap:wrap">
       <input class="inp" id="mb-q" placeholder="Buscar concepto, banco, cuenta..." oninput="renderMovimientos()">
-      <select class="sel" id="mb-estado" onchange="renderMovimientos()"><option value="all">Todos los estados</option><option value="pendiente">Pendientes</option><option value="nuevo">Nuevos</option><option value="validado">Validados</option><option value="incidencia">Con incidencia</option><option value="sin_clasificar">Sin clasificar</option><option value="auto">Clasificados auto</option></select>
+      <select class="sel" id="mb-estado" onchange="renderMovimientos()"><option value="all">Todos los estados</option><option value="pendiente">Pendientes</option><option value="nuevo">Nuevos</option><option value="validado">Validados</option><option value="incidencia">Con incidencia</option><option value="sin_clasificar">Sin clasificar</option><option value="auto">Clasificados auto</option><option value="intercompany">Intercompany</option><option value="dividendo">Dividendos Corp → Bridge</option><option value="prestamo_intercompany">Préstamos Bridge → Vallecas</option></select>
       <span class="filter-tag" id="mb-filter-info"></span>
     </div>
-    <div class="tw"><table><thead><tr><th>Fecha</th><th>Empresa</th><th>Banco / cuenta</th><th>Concepto</th><th>Cuenta asociada</th><th class="tr">Importe</th><th class="tr">Saldo</th><th>Estado</th><th>Validado</th><th>Incidencia</th><th>Nota</th></tr></thead><tbody id="tb-movimientos"></tbody></table></div>
+    <div class="tw"><table><thead><tr><th>Fecha</th><th>Empresa</th><th>Banco / cuenta</th><th>Concepto</th><th>Cuenta asociada</th><th>Intercompany</th><th>Origen → destino</th><th class="tr">Importe</th><th class="tr">Saldo</th><th>Estado</th><th>Validado</th><th>Incidencia</th><th>Nota</th></tr></thead><tbody id="tb-movimientos"></tbody></table></div>
   </div>
 </div>
 
@@ -554,7 +564,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-30-30 cargado: seguridad con login, roles, RLS, usuarios admin e IBAN ocultos");
+console.log("INDEX FINANCIERO v2026-04-30-31 cargado: intercompany opcion 2 con dividendos y prestamos intersocietarios");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1838,6 +1848,66 @@ function gastoCategorias() {
   const setCats = new Set((D.gastos || []).map(g => (g.fuente_gasto || g.categoria || '').trim()).filter(Boolean));
   return Array.from(setCats).sort((a,b)=>a.localeCompare(b,'es'));
 }
+
+function intercompanyTypeLabel(t) {
+  if (t === 'dividendo') return 'Reparto de dividendos';
+  if (t === 'prestamo_intercompany') return 'Préstamo intersocietario';
+  if (t === 'devolucion_prestamo_intercompany') return 'Devolución préstamo intersocietario';
+  if (t === 'transferencia_interna') return 'Transferencia interna';
+  return 'No intercompany';
+}
+function inferIntercompanyFromConcept(m) {
+  const txt = normTxt([m.concepto, m.referencia, m.cuenta_asociada, m.categoria_asociada].join(' '));
+  const empresa = String(m.empresa || '');
+  const isCorpBridge = (txt.includes('corporacion') || txt.includes('corporación') || empresa === 'Corporacion') && txt.includes('bridge');
+  const isBridgeVallecas = (txt.includes('bridge') || empresa === 'Bridge') && (txt.includes('vallecas') || txt.includes('vallecas las'));
+  if (txt.includes('dividendo') || txt.includes('reparto') || isCorpBridge) {
+    return { es_intercompany: true, tipo_intercompany: 'dividendo', empresa_origen: 'Corporacion', empresa_destino: 'Bridge', tipo_movimiento: 'intercompany', cuenta_asociada: 'Reparto de dividendos', categoria_asociada: 'Reparto de dividendos', impacto_resultado: false, impacto_tesoreria: true, impacto_balance: true };
+  }
+  if (txt.includes('prestamo intersocietario') || txt.includes('préstamo intersocietario') || txt.includes('prestamo intercompany') || txt.includes('préstamo intercompany') || isBridgeVallecas) {
+    return { es_intercompany: true, tipo_intercompany: 'prestamo_intercompany', empresa_origen: 'Bridge', empresa_destino: 'Vallecas Las', tipo_movimiento: 'intercompany', cuenta_asociada: 'Préstamo intersocietario', categoria_asociada: 'Préstamo intersocietario', impacto_resultado: false, impacto_tesoreria: true, impacto_balance: true };
+  }
+  return null;
+}
+function applyIntercompanyToMovement(m, overwrite=false) {
+  if (!m) return m;
+  if (!overwrite && m.es_intercompany) return m;
+  const inf = inferIntercompanyFromConcept(m);
+  if (!inf) return m;
+  Object.assign(m, inf);
+  m.estado_clasificacion = m.estado_clasificacion === 'auto' ? 'auto' : 'intercompany';
+  return m;
+}
+async function aplicarIntercompany(overwrite=false) {
+  (D.movimientos || []).forEach(m => applyIntercompanyToMovement(m, overwrite));
+  await saveBankMovementsSupabase();
+  renderMovimientos();
+}
+function setMovimientoIntercompany(id, tipo) {
+  const m = (D.movimientos || []).find(x => x.id === id);
+  if (!m) return;
+  if (!tipo) {
+    m.es_intercompany = false;
+    m.tipo_intercompany = '';
+    m.empresa_origen = '';
+    m.empresa_destino = '';
+    m.impacto_resultado = true;
+    m.tipo_movimiento = Number(m.importe) >= 0 ? 'ingreso' : 'gasto';
+  } else if (tipo === 'dividendo') {
+    Object.assign(m, { es_intercompany:true, tipo_intercompany:'dividendo', empresa_origen:'Corporacion', empresa_destino:'Bridge', tipo_movimiento:'intercompany', cuenta_asociada:'Reparto de dividendos', categoria_asociada:'Reparto de dividendos', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
+  } else if (tipo === 'prestamo_intercompany') {
+    Object.assign(m, { es_intercompany:true, tipo_intercompany:'prestamo_intercompany', empresa_origen:'Bridge', empresa_destino:'Vallecas Las', tipo_movimiento:'intercompany', cuenta_asociada:'Préstamo intersocietario', categoria_asociada:'Préstamo intersocietario', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
+  }
+  m.estado_clasificacion = tipo ? 'intercompany' : 'sin_clasificar';
+  saveBankMovementsSupabase();
+  renderMovimientos();
+}
+function renderIntercompanyTable(all) {
+  const tb = document.getElementById('tb-intercompany');
+  if (!tb) return;
+  const rows = (all || []).filter(m => m.es_intercompany || m.tipo_movimiento === 'intercompany').slice(0,150);
+  tb.innerHTML = rows.map(m => `<tr><td>${fdate(m.fecha)}</td><td>${intercompanyTypeLabel(m.tipo_intercompany)}</td><td>${m.empresa_origen || '—'}</td><td>${m.empresa_destino || '—'}</td><td>${m.concepto || '—'}</td><td class="tr" style="font-weight:700">${eur(Math.abs(Number(m.importe)||0))}</td><td><span class="pill pg">Excluido resultado</span></td></tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:22px">Sin operaciones intercompany detectadas todavía.</td></tr>';
+}
 function ruleMatchesMovement(rule, m) {
   if (!rule || rule.activa === false || !m) return false;
   const txt = normTxt(rule.texto_contiene || rule.texto || '');
@@ -1863,10 +1933,16 @@ function applyBankRulesToMovement(m, overwrite=false) {
   m.proveedor_asociado = rule.proveedor_sugerido || m.proveedor_asociado || '';
   m.regla_id = rule.id;
   m.estado_clasificacion = 'auto';
+  if (rule.tipo === 'dividendo') {
+    Object.assign(m, { es_intercompany:true, tipo_intercompany:'dividendo', empresa_origen:'Corporacion', empresa_destino:'Bridge', tipo_movimiento:'intercompany', cuenta_asociada:'Reparto de dividendos', categoria_asociada:'Reparto de dividendos', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
+  }
+  if (rule.tipo === 'prestamo_intercompany') {
+    Object.assign(m, { es_intercompany:true, tipo_intercompany:'prestamo_intercompany', empresa_origen:'Bridge', empresa_destino:'Vallecas Las', tipo_movimiento:'intercompany', cuenta_asociada:'Préstamo intersocietario', categoria_asociada:'Préstamo intersocietario', impacto_resultado:false, impacto_tesoreria:true, impacto_balance:true });
+  }
   return m;
 }
 async function aplicarReglasBancarias(overwrite=false) {
-  (D.movimientos || []).forEach(m => applyBankRulesToMovement(m, overwrite));
+  (D.movimientos || []).forEach(m => { applyBankRulesToMovement(m, overwrite); applyIntercompanyToMovement(m, overwrite); });
   await saveBankMovementsSupabase();
   renderMovimientos();
   renderReglasBancarias();
@@ -1986,6 +2062,7 @@ function normalizeBankMovement(row, fileName) {
   };
   m.id = 'mb_' + btoa(unescape(encodeURIComponent(bankMoveKey(m)))).replace(/[^a-zA-Z0-9]/g,'').slice(0,42);
   applyBankRulesToMovement(m, false);
+  applyIntercompanyToMovement(m, false);
   return m;
 }
 async function handleBankMovementsFile(file) {
@@ -2024,13 +2101,16 @@ function filterBankMovements() {
   const q = normTxt(document.getElementById('mb-q')?.value || '');
   const st = document.getElementById('mb-estado')?.value || 'all';
   let rows = filterEmpresaFor(D.movimientos || [], empresaActual, 'empresa');
-  if (q) rows = rows.filter(m => normTxt([m.fecha,m.empresa,m.banco,m.cuenta,m.concepto,m.referencia,m.cuenta_asociada,m.categoria_asociada,m.tipo_movimiento,m.archivo_origen].join(' ')).includes(q));
+  if (q) rows = rows.filter(m => normTxt([m.fecha,m.empresa,m.banco,m.cuenta,m.concepto,m.referencia,m.cuenta_asociada,m.categoria_asociada,m.tipo_movimiento,m.tipo_intercompany,m.empresa_origen,m.empresa_destino,m.archivo_origen].join(' ')).includes(q));
   if (st === 'pendiente') rows = rows.filter(m => !m.validado);
   if (st === 'nuevo') rows = rows.filter(m => m.es_nuevo);
   if (st === 'validado') rows = rows.filter(m => m.validado);
   if (st === 'incidencia') rows = rows.filter(m => m.incidencia);
   if (st === 'sin_clasificar') rows = rows.filter(m => !m.cuenta_asociada && m.tipo_movimiento !== 'traspaso');
   if (st === 'auto') rows = rows.filter(m => m.estado_clasificacion === 'auto');
+  if (st === 'intercompany') rows = rows.filter(m => m.es_intercompany || m.tipo_movimiento === 'intercompany');
+  if (st === 'dividendo') rows = rows.filter(m => m.tipo_intercompany === 'dividendo');
+  if (st === 'prestamo_intercompany') rows = rows.filter(m => m.tipo_intercompany === 'prestamo_intercompany');
   return rows;
 }
 function setMovimientoField(id, field, value) {
@@ -2058,8 +2138,13 @@ function renderMovimientos() {
   const pend = all.filter(m => !m.validado).length;
   const val = all.filter(m => m.validado).length;
   const inc = all.filter(m => m.incidencia).length;
+  const inter = all.filter(m => m.es_intercompany || m.tipo_movimiento === 'intercompany');
+  const divs = inter.filter(m => m.tipo_intercompany === 'dividendo').reduce((s,m)=>s+Math.abs(Number(m.importe)||0),0);
+  const loans = inter.filter(m => m.tipo_intercompany === 'prestamo_intercompany').reduce((s,m)=>s+Math.abs(Number(m.importe)||0),0);
   set('mb-total', all.length); set('mb-total-s', empresaActual === 'Global' ? 'Todas las empresas' : empresaActual);
   set('mb-pend', pend); set('mb-val', val); set('mb-inc', inc);
+  set('mb-ic-total', eur(inter.reduce((s,m)=>s+Math.abs(Number(m.importe)||0),0))); set('mb-ic-s', inter.length + ' movimiento(s)');
+  set('mb-ic-div', eur(divs)); set('mb-ic-loan', eur(loans));
   set('mb-filter-info', `${rows.length} mostrados`);
   mkChart('c-mov-estados', 'doughnut', ['Pendientes','Validados','Incidencias'], [{ data: [pend, val, inc], backgroundColor: ['#D4502A','#1A9E72','#B87318'], borderWidth: 0 }]);
   const pos = validatedBankPosition(all);
@@ -2070,11 +2155,14 @@ function renderMovimientos() {
   tbody.innerHTML = rows.slice(0, 300).map(m => {
     const cls = m.estado_clasificacion === 'auto' ? '<span class="pill pg">Auto</span>' : (m.cuenta_asociada ? '<span class="pill pb">Manual</span>' : '<span class="pill pz">Sin clasificar</span>');
     const catOptions = [''].concat(cats).map(c => `<option value="${c}" ${String(m.cuenta_asociada || m.categoria_asociada || '')===c?'selected':''}>${c || 'Sin cuenta'}</option>`).join('');
+    const icOptions = `<option value="" ${!m.es_intercompany?'selected':''}>No</option><option value="dividendo" ${m.tipo_intercompany==='dividendo'?'selected':''}>Dividendo Corp → Bridge</option><option value="prestamo_intercompany" ${m.tipo_intercompany==='prestamo_intercompany'?'selected':''}>Préstamo Bridge → Vallecas</option>`;
     return `<tr>
       <td>${fdate(m.fecha)}</td><td>${m.empresa || '—'}</td>
       <td><strong>${m.banco || '—'}</strong><br><span style="font-size:12px;color:var(--text3)">${safeAccount(m.cuenta)}</span></td>
       <td>${m.concepto || '—'}<br><span style="font-size:12px;color:var(--text3)">${m.referencia || ''}</span></td>
       <td><select onchange="setMovimientoCategoria('${m.id}',this.value)" style="width:150px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px">${catOptions}</select><br>${cls} <button class="eb" style="font-size:11px;padding:3px 7px;margin-top:4px" onclick="learnRuleFromMovimiento('${m.id}')">Aprender</button></td>
+      <td><select onchange="setMovimientoIntercompany('${m.id}',this.value)" style="width:185px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px">${icOptions}</select></td>
+      <td><span style="font-size:12px;color:var(--text3)">${m.empresa_origen || '—'} → ${m.empresa_destino || '—'}</span></td>
       <td class="tr" style="font-weight:700;color:${(Number(m.importe)||0)>=0?'var(--green)':'var(--red)'}">${eur(Number(m.importe)||0)}</td>
       <td class="tr">${m.saldo ? eur(Number(m.saldo)||0) : '—'}</td>
       <td>${m.es_nuevo ? '<span class="pill pz">Nuevo</span>' : '<span class="pill pb">Revisado</span>'}</td>
@@ -2082,11 +2170,12 @@ function renderMovimientos() {
       <td><input type="checkbox" ${m.incidencia ? 'checked' : ''} onchange="setMovimientoField('${m.id}','incidencia',this.checked)"></td>
       <td><input value="${String(m.nota_incidencia || '').replace(/"/g,'&quot;')}" onchange="setMovimientoField('${m.id}','nota_incidencia',this.value)" placeholder="Nota" style="width:150px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="11" style="text-align:center;color:var(--text3);padding:26px">Sin movimientos bancarios. Sube un Excel o CSV para empezar a validar la tesorería.</td></tr>';
+  }).join('') || '<tr><td colspan="13" style="text-align:center;color:var(--text3);padding:26px">Sin movimientos bancarios. Sube un Excel o CSV para empezar a validar la tesorería.</td></tr>';
+  renderIntercompanyTable(all);
 }
 function exportBankMovementsCSV() {
   const rows = filterBankMovements();
-  const headers = ['fecha','empresa','banco','cuenta','concepto','referencia','cuenta_asociada','tipo_movimiento','estado_clasificacion','importe','saldo','validado','incidencia','nota_incidencia','archivo_origen'];
+  const headers = ['fecha','empresa','banco','cuenta','concepto','referencia','cuenta_asociada','tipo_movimiento','es_intercompany','tipo_intercompany','empresa_origen','empresa_destino','impacto_resultado','estado_clasificacion','importe','saldo','validado','incidencia','nota_incidencia','archivo_origen'];
   const csv = [headers.join(';'), ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g,'""')}"`).join(';'))].join('\n');
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'movimientos_bancarios.csv'; a.click(); URL.revokeObjectURL(a.href);

@@ -254,8 +254,10 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
   <div class="metrics">
     <div class="metric"><div class="ml">Total gastos</div><div class="mv" id="g-tot">—</div><div class="ms" id="g-cnt"></div></div>
     <div class="metric"><div class="ml">Pendiente de pago</div><div class="mv dn" id="g-pend">—</div><div class="ms" id="g-pend-s"></div></div>
-    <div class="metric"><div class="ml">Mayor categoría</div><div class="mv" id="g-cat">—</div><div class="ms" id="g-cat-v"></div></div>
-    <div class="metric"><div class="ml">Proveedores únicos</div><div class="mv" id="g-prov">—</div><div class="ms">Activos</div></div>
+    <div class="metric"><div class="ml">Pendiente pasado</div><div class="mv dn" id="g-pend-pas">—</div><div class="ms" id="g-pend-pas-s"></div></div>
+    <div class="metric"><div class="ml">Próximos 15 días</div><div class="mv dn" id="g-pend-15">—</div><div class="ms" id="g-pend-15-s"></div></div>
+    <div class="metric"><div class="ml">Próximo mes</div><div class="mv dn" id="g-pend-30">—</div><div class="ms" id="g-pend-30-s"></div></div>
+    <div class="metric"><div class="ml">Pagado</div><div class="mv up" id="g-paid">—</div><div class="ms" id="g-paid-s"></div></div>
   </div>
   <div class="g2 mb">
     <div class="card"><div class="ct">Por categoría</div><div style="height:230px;position:relative"><canvas id="c-g-cat"></canvas></div></div>
@@ -442,7 +444,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-19 cargado: tesoreria sin selector historico y movimientos bancarios operativos");
+console.log("INDEX FINANCIERO v2026-04-29-20 cargado: gastos pendientes desglosados por vencimiento");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1604,15 +1606,70 @@ function estadoGastoBadge(g) {
   return `<span class="pill pz" style="font-size:10px">${estado}</span>`;
 }
 
+function ymdLocal(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return x.toISOString().slice(0,10);
+}
+
+function gastoFechaVencimiento(g) {
+  return getGastoFechaPago(g) || g.fecha || '';
+}
+
+function gastoPendienteBucket(g) {
+  if (!gastoPendiente(g)) return '';
+  const f = gastoFechaVencimiento(g);
+  if (!f) return 'sin_fecha';
+  const today = new Date();
+  const t0 = ymdLocal(today);
+  const d15 = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 15);
+  const d30 = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 30);
+  const t15 = ymdLocal(d15);
+  const t30 = ymdLocal(d30);
+  if (f < t0) return 'pasado';
+  if (f <= t15) return 'prox15';
+  if (f <= t30) return 'prox30';
+  return 'futuro';
+}
+
+function gastoPendienteResumen(gastos) {
+  const out = {
+    total: { rows: [], importe: 0 },
+    pasado: { rows: [], importe: 0 },
+    prox15: { rows: [], importe: 0 },
+    prox30: { rows: [], importe: 0 },
+    futuro: { rows: [], importe: 0 },
+    sin_fecha: { rows: [], importe: 0 },
+    pagado: { rows: [], importe: 0 },
+  };
+  gastos.forEach(g => {
+    const imp = Number(g.importe) || 0;
+    if (gastoPendiente(g)) {
+      out.total.rows.push(g); out.total.importe += imp;
+      const b = gastoPendienteBucket(g);
+      if (out[b]) { out[b].rows.push(g); out[b].importe += imp; }
+    }
+    if (gastoPagado(g)) { out.pagado.rows.push(g); out.pagado.importe += imp; }
+  });
+  return out;
+}
+
 function renderGastos() {
   const gastos = filtrarEmp(D.gastos, 'empresa');
   const tot = gastos.reduce((s, g) => s + (g.importe || 0), 0);
-  const pend = gastos.filter(gastoPendiente);
-  const pendTot = pend.reduce((s, g) => s + (g.importe || 0), 0);
-  const pendSinFecha = pend.filter(g => !getGastoFechaPago(g)).length;
+  const pr = gastoPendienteResumen(gastos);
+  const pend = pr.total.rows;
+  const pendSinFecha = pr.sin_fecha.rows.length;
   set('g-tot', eur(tot)); set('g-cnt', gastos.length + ' transacciones');
-  set('g-pend', eur(pendTot));
-  set('g-pend-s', pend.length + ' pendientes' + (pendSinFecha ? ' · ' + pendSinFecha + ' sin fecha estimada' : ''));
+  set('g-pend', eur(pr.total.importe));
+  set('g-pend-s', pend.length + ' pendientes' + (pendSinFecha ? ' · ' + pendSinFecha + ' sin fecha' : ''));
+  set('g-pend-pas', eur(pr.pasado.importe));
+  set('g-pend-pas-s', pr.pasado.rows.length + ' vencidos');
+  set('g-pend-15', eur(pr.prox15.importe));
+  set('g-pend-15-s', pr.prox15.rows.length + ' pagos previstos');
+  set('g-pend-30', eur(pr.prox30.importe));
+  set('g-pend-30-s', pr.prox30.rows.length + ' pagos previstos');
+  set('g-paid', eur(pr.pagado.importe));
+  set('g-paid-s', pr.pagado.rows.length + ' pagados');
   const pc = {}; gastos.forEach(g => { if (g.fuente_gasto && g.importe) pc[g.fuente_gasto] = (pc[g.fuente_gasto] || 0) + g.importe; });
   const cats = Object.entries(pc).sort((a,b) => b[1]-a[1]);
   set('g-cat', cats[0]?.[0] || '—'); set('g-cat-v', cats[0] ? eur(cats[0][1]) : '');
@@ -1640,7 +1697,11 @@ function renderGastos() {
   selFP.innerHTML = '<option value="">Todas las formas de pago</option>' + formas.map(f => `<option value="${f}" ${f===curFP?'selected':''}>${f}</option>`).join('');
   const selEst = document.getElementById('g-estado-f');
   const curEst = selEst.value;
-  selEst.innerHTML = '<option value="">Todos los estados</option>' + estados.map(e => `<option value="${e}" ${e===curEst?'selected':''}>${e}</option>`).join('') + '<option value="__pend_sin_fecha" '+(curEst==='__pend_sin_fecha'?'selected':'')+'>Pendientes sin fecha estimada</option>';
+  selEst.innerHTML = '<option value="">Todos los estados</option>' + estados.map(e => `<option value="${e}" ${e===curEst?'selected':''}>${e}</option>`).join('') +
+    '<option value="__pend_pasados" '+(curEst==='__pend_pasados'?'selected':'')+'>Pendientes pasados</option>' +
+    '<option value="__pend_15" '+(curEst==='__pend_15'?'selected':'')+'>Pendientes próximos 15 días</option>' +
+    '<option value="__pend_mes" '+(curEst==='__pend_mes'?'selected':'')+'>Pendientes próximo mes</option>' +
+    '<option value="__pend_sin_fecha" '+(curEst==='__pend_sin_fecha'?'selected':'')+'>Pendientes sin fecha</option>';
   filterG();
 }
 
@@ -1658,7 +1719,12 @@ function filterG() {
     (!mesF || (g.fecha && String(g.fecha).startsWith(mesF))) &&
     (!empF || g.empresa === empF) &&
     (!fpF || g.forma_pago === fpF) &&
-    (!estadoF || (estadoF === '__pend_sin_fecha' ? (gastoPendiente(g) && !getGastoFechaPago(g)) : g.estado === estadoF))
+    (!estadoF ||
+      (estadoF === '__pend_sin_fecha' ? (gastoPendiente(g) && gastoPendienteBucket(g) === 'sin_fecha') :
+       estadoF === '__pend_pasados' ? (gastoPendiente(g) && gastoPendienteBucket(g) === 'pasado') :
+       estadoF === '__pend_15' ? (gastoPendiente(g) && gastoPendienteBucket(g) === 'prox15') :
+       estadoF === '__pend_mes' ? (gastoPendiente(g) && gastoPendienteBucket(g) === 'prox30') :
+       g.estado === estadoF))
   );
   const totFil = rows.reduce((s,g)=>s+(g.importe||0),0);
   set('g-count-tag', rows.length + ' registros · ' + eur(totFil));

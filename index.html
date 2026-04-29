@@ -444,11 +444,11 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-29-20 cargado: gastos pendientes desglosados por vencimiento");
+console.log("INDEX FINANCIERO v2026-04-29-21 cargado: gastos toma fecha de pago del Excel como pago estimado");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
-// GastosGenerales: fila 2 = Empresa,Fecha,Fuente de gasto,Factura,Concepto,Proveedor,Estado,Forma de pago,Aditio,Importe,...
+// GastosGenerales: fila 2 = Empresa,Fecha,Fuente de gasto,Factura,Concepto,Proveedor,Estado,Forma de pago,Aditio,Importe,...,Fecha de pago
 // Cajas (Enero26 etc): fila 4 = Fecha,Efectivo,Tarjeta Caixa,Tarjeta Kutxa,Tarjeta Sabadell,Tarjeta Cajamar,Transferencia,Financiación,Gasto,Total,Facturado,Obj diario,15% Caja,...
 // Financiaciones: fila 1 = FF,FECHA,N.PETICION,CANAL,FINANCIADO,BANCO,COMISION,DESCUENTO,% DESCUENTO,MESES,NOMBRE,NIF,ESTADO
 // ============================================================
@@ -576,6 +576,18 @@ function parseCSVFromRow(text, headerRow = 0) {
   return result;
 }
 
+function firstField(row, names) {
+  for (const name of names) {
+    if (row[name] !== undefined && row[name] !== null && String(row[name]).trim() !== '') return row[name];
+  }
+  const normalized = Object.fromEntries(Object.keys(row || {}).map(k => [normTxt(k), row[k]]));
+  for (const name of names) {
+    const key = normTxt(name);
+    if (normalized[key] !== undefined && normalized[key] !== null && String(normalized[key]).trim() !== '') return normalized[key];
+  }
+  return '';
+}
+
 async function fetchText(url) {
   const proxyUrl = 'https://rdepiltywmdwiegbtyxr.supabase.co/functions/v1/dynamic-responder?url=' + encodeURIComponent(url);
   const res = await fetch(proxyUrl);
@@ -593,19 +605,26 @@ async function fetchGastos() {
   const rows = parseCSVFromRow(text, 1); // headers en fila 2 (índice 1)
   return rows
     .filter(r => r['Empresa'] && r['Fecha'] && r['Importe'])
-    .map(r => ({
-      empresa: r['Empresa'],
-      fecha: fixDate(r['Fecha']),
-      fuente_gasto: r['Fuente de gasto'] || '',
-      factura: r['Factura'] || '',
-      concepto: r['Concepto'] || '',
-      proveedor: r['Proveedor'] || '',
-      estado: r['Estado'] || '',
-      forma_pago: r['Forma de pago'] || '',
-      aditio: r['Aditio'] || '',
-      importe: parseNum(r['Importe']),
-      observaciones: r['Observaciones'] || '',
-    }));
+    .map(r => {
+      const fechaPago = fixDate(firstField(r, ['Fecha de pago','Fecha Pago','Fecha pago','Pago estimado','Fecha estimada de pago','Fecha estimada pago'])) || null;
+      const g = {
+        empresa: r['Empresa'],
+        fecha: fixDate(r['Fecha']),
+        fecha_pago: fechaPago,
+        fuente_gasto: r['Fuente de gasto'] || '',
+        factura: r['Factura'] || '',
+        concepto: r['Concepto'] || '',
+        proveedor: r['Proveedor'] || '',
+        estado: r['Estado'] || '',
+        forma_pago: r['Forma de pago'] || '',
+        aditio: r['Aditio'] || '',
+        importe: parseNum(r['Importe']),
+        observaciones: r['Observaciones'] || '',
+      };
+      // Si Supabase todavía no tiene la columna fecha_pago, al menos queda asociada localmente tras sincronizar.
+      if (fechaPago) localStorage.setItem('gasto_pago_est_' + gastoKey(g), fechaPago);
+      return g;
+    });
 }
 
 
@@ -968,7 +987,14 @@ async function syncSheets() {
     const { error: delGastos } = await sb.from('gastos').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     if (delGastos) throw new Error('Borrando gastos: ' + delGastos.message);
     if (gastos.length) {
-      const { error: eG } = await sb.from('gastos').insert(gastos);
+      let { error: eG } = await sb.from('gastos').insert(gastos);
+      // Compatibilidad: si la tabla gastos todavía no tiene fecha_pago, reintenta sin esa columna.
+      // Para que sea compartido entre usuarios, añade la columna con el SQL adjunto.
+      if (eG && /fecha_pago|schema cache|column/i.test(eG.message || '')) {
+        log.push('Aviso: la tabla gastos no acepta fecha_pago; reintento sin columna y mantengo pago estimado en navegador');
+        const gastosSinFechaPago = gastos.map(({fecha_pago, ...rest}) => rest);
+        ({ error: eG } = await sb.from('gastos').insert(gastosSinFechaPago));
+      }
       if (eG) throw new Error('Guardando gastos: ' + eG.message);
     }
     log.push('✓ Gastos guardados');
@@ -1589,7 +1615,7 @@ function gastoPagado(g) {
   const e = normEstadoGasto(g.estado);
   return e.includes('pagad') || e === 'ok' || e.includes('abonad');
 }
-function getGastoFechaPago(g) { return localStorage.getItem('gasto_pago_est_' + gastoKey(g)) || ''; }
+function getGastoFechaPago(g) { return localStorage.getItem('gasto_pago_est_' + gastoKey(g)) || g.fecha_pago || g.fecha_estimada_pago || ''; }
 function setGastoFechaPago(key, value) {
   if (value) localStorage.setItem('gasto_pago_est_' + key, value);
   else localStorage.removeItem('gasto_pago_est_' + key);

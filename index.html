@@ -229,18 +229,18 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 <!-- MOVIMIENTOS BANCARIOS -->
 <div class="page" id="page-movimientos">
   <div class="ph" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
-    <div><div class="pt">Movimientos bancarios</div><div class="ps">Subida diaria de extractos bancarios. El banco confirma tesorería; Excel mantiene ingresos y gastos. Los movimientos se concilian para evitar duplicados.</div></div>
+    <div><div class="pt">Movimientos bancarios</div><div class="ps">Modo recomendado: subir extractos Excel/CSV de los bancos. El banco confirma tesorería; Excel mantiene ingresos y gastos. Powens queda como beta opcional.</div></div>
     <div id="empresa-bar-m" class="empresa-bar" style="margin-bottom:0"></div>
   </div>
   <div class="card mb">
     <div class="ch" style="align-items:flex-start;gap:14px;flex-wrap:wrap">
       <div>
-        <div class="ct" style="margin:0">Integración bancaria automática</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Conexión PSD2 mediante Powens y Supabase Edge Function. El banco se elige dentro del Webview de Powens para evitar errores de conector; después se sincronizan saldos y movimientos.</div>
+        <div class="ct" style="margin:0">Integración bancaria automática <span class="pill pa">Beta</span></div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Opcional. Si Powens no devuelve token, no se considera banco conectado. Para trabajar gratis y estable, usa el bloque de subida de extractos bancarios.</div>
       </div>
       <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn bg2btn" onclick="loadOpenBankingInstitutions()">Cargar bancos Powens</button>
-        <button class="btn bp" onclick="syncAllBankConnections()">Actualizar bancos</button>
+        <button class="btn bp" onclick="syncAllBankConnections()">Actualizar bancos beta</button>
       </div>
     </div>
     <div class="filter-bar" style="margin-top:10px">
@@ -250,21 +250,38 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
       <button class="btn bg2btn" onclick="createBankConnection()">Conectar banco</button>
     </div>
     <div id="ob-status" style="font-size:12px;color:var(--text3);margin-bottom:10px"></div>
+    <div class="al" style="margin-bottom:10px;background:#FFF7ED;color:#9A3412;border:1px solid rgba(234,88,12,.18)"><strong>Nota:</strong> las filas en estado <strong>webview_created</strong> son autorizaciones incompletas. Usa Reconectar o Eliminar. La tesorería real se validará con extractos bancarios hasta activar Powens en producción.</div>
     <div class="tw"><table><thead><tr><th>Banco</th><th>Empresa</th><th>Alias</th><th>Estado</th><th>Consentimiento</th><th>Última sync</th><th>Acciones</th></tr></thead><tbody id="tb-bank-connections"></tbody></table></div>
   </div>
   <div class="card mb">
     <div class="ch" style="align-items:flex-start;gap:14px;flex-wrap:wrap">
       <div>
-        <div class="ct" style="margin:0">Subir movimientos</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:4px">Acepta Excel o CSV. Detecta columnas habituales: Fecha, Banco, Cuenta, Concepto/Descripción, Referencia, Importe, Saldo y Empresa.</div>
+        <div class="ct" style="margin:0">Subir extractos bancarios <span class="pill pg">Gratis</span></div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px">Vía principal recomendada. Acepta Excel/CSV de Caixa, BBVA, Sabadell, Cajamar y Laboral Kutxa. Detecta Fecha, Concepto, Importe, Saldo, Banco, Cuenta y Empresa.</div>
       </div>
       <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
         <input id="bank-file" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleBankMovementsFile(this.files[0])">
         <button class="btn bp" onclick="document.getElementById('bank-file').click()">Subir Excel/CSV</button>
+        <button class="btn bg2btn" onclick="downloadBankTemplate('csv')">Plantilla CSV</button>
+        <button class="btn bg2btn" onclick="downloadBankTemplate('xlsx')">Plantilla Excel</button>
         <button class="btn bg2btn" onclick="exportBankMovementsCSV()">Exportar CSV</button>
       </div>
     </div>
+    <div class="filter-bar" style="margin-top:12px">
+      <select class="sel" id="bank-import-format"><option value="auto">Formato automático</option><option>Caixa</option><option>BBVA</option><option>Sabadell</option><option>Cajamar</option><option>Laboral Kutxa</option></select>
+      <select class="sel" id="bank-import-empresa"><option value="auto">Empresa según archivo / filtro actual</option><option>Corporacion</option><option>Bridge</option><option>Vallecas Las</option></select>
+      <input class="inp" id="bank-import-alias" placeholder="Alias cuenta, ej. BBVA Corporación" style="min-width:220px">
+    </div>
     <div id="bank-upload-result" style="margin-top:12px"></div>
+  </div>
+  <div class="card mb">
+    <div class="ct">Flujo recomendado gratuito</div>
+    <div class="ps" style="margin-bottom:10px">1) Descargar extracto del banco. 2) Subir Excel/CSV. 3) Validar nuevos movimientos. 4) Conciliar contra Gastos/Ingresos. 5) Marcar intercompany cuando sea dividendo o préstamo intersocietario.</div>
+    <div class="g3">
+      <div class="metric"><div class="ml">Tesorería</div><div class="mv" style="font-size:18px">Banco</div><div class="ms">El extracto confirma saldos reales</div></div>
+      <div class="metric"><div class="ml">Resultado</div><div class="mv" style="font-size:18px">Excel</div><div class="ms">Gastos e ingresos no se duplican</div></div>
+      <div class="metric"><div class="ml">Control</div><div class="mv" style="font-size:18px">Conciliación</div><div class="ms">Vincula banco con Excel</div></div>
+    </div>
   </div>
   <div class="metrics">
     <div class="metric"><div class="ml">Movimientos</div><div class="mv" id="mb-total">—</div><div class="ms" id="mb-total-s"></div></div>
@@ -576,7 +593,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-30-32 cargado: conciliacion banco-excel, intercompany y control anti-duplicados");
+console.log("INDEX FINANCIERO v2026-04-30-33 cargado: modo gratis con extractos bancarios, Powens beta y conciliacion anti-duplicados");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1765,13 +1782,20 @@ async function createBankConnection() {
 }
 async function completeReturnedBankConnection() {
   const params = new URLSearchParams(window.location.search);
-  if (!params.has('powens_return') && !params.has('code') && !params.has('connection_id') && !params.has('connection_ids') && !params.has('id_connection')) return;
+  if (!params.has('powens_return') && !params.has('code') && !params.has('connection_id') && !params.has('connection_ids') && !params.has('id_connection') && !params.has('error')) return;
+  const returnedError = params.get('error') || params.get('error_description') || '';
+  if (returnedError) {
+    setOBStatus('Powens no completó la autorización: ' + returnedError + '. La conexión no se usará hasta reconectar y obtener token.', 'err');
+    history.replaceState({}, document.title, window.location.pathname);
+    return;
+  }
   try {
     setOBStatus('Completando conexión bancaria de Powens...');
     const code = params.get('code') || '';
     const connection_id = params.get('connection_id') || params.get('id_connection') || '';
     const connection_ids = params.get('connection_ids') || '';
     const state = params.get('state') || '';
+    if (!code && !connection_id && !connection_ids) throw new Error('Powens no devolvió code ni connection_id. Hay que reconectar desde Webview.');
     await openBankingCall('complete_connection', { code, connection_id, connection_ids, state });
     setOBStatus('Conexión bancaria completada. Sincronizando datos...', 'ok');
     await openBankingCall('sync_all', {});
@@ -1779,11 +1803,15 @@ async function completeReturnedBankConnection() {
     history.replaceState({}, document.title, window.location.pathname);
   } catch (err) {
     console.warn(err);
-    setOBStatus('No se pudo completar automáticamente. Entra en Movimientos bancarios y pulsa Actualizar bancos. ' + (err.message || ''), 'err');
+    setOBStatus('No se pudo completar automáticamente. Usa Reconectar o trabaja con extractos Excel/CSV. ' + (err.message || ''), 'err');
   }
 }
 async function syncBankConnection(id) {
   try {
+    const conn = (D.bankConnections || []).find(c => String(c.id) === String(id));
+    if (conn && !['connected','active'].includes(String(conn.status || '').toLowerCase())) {
+      throw new Error('Esta conexión está pendiente/incompleta. Pulsa Reconectar o elimina la fila.');
+    }
     setOBStatus('Sincronizando banco con Powens...');
     const data = await openBankingCall('sync_connection', { connection_id: id });
     setOBStatus(`Sincronizado: ${data.inserted || 0} movimientos procesados.`, 'ok');
@@ -1815,9 +1843,30 @@ function renderBankConnections() {
   tbody.innerHTML = rows.map(c => {
     const validUntil = c.consent_expires_at ? new Date(c.consent_expires_at).toLocaleDateString('es-ES') : '—';
     const status = c.status || 'pendiente';
-    const pill = status === 'connected' || status === 'active' ? 'pg' : (status === 'error' ? 'pr' : 'pa');
-    return `<tr><td style="font-weight:600">${c.banco || c.institution_id || 'Banco'}</td><td>${c.empresa || ''}</td><td>${safeAccount(c.alias || c.account_iban || c.cuenta || '')}</td><td><span class="pill ${pill}">${status}</span></td><td>${validUntil}</td><td>${c.last_sync_at ? new Date(c.last_sync_at).toLocaleString('es-ES') : '—'}</td><td><button class="eb" onclick="syncBankConnection('${c.id}')">Actualizar</button></td></tr>`;
+    const connected = status === 'connected' || status === 'active';
+    const pill = connected ? 'pg' : (status === 'error' ? 'pr' : 'pa');
+    const actions = connected
+      ? `<button class="eb" onclick="syncBankConnection('${c.id}')">Actualizar</button>`
+      : `<button class="eb" onclick="createBankConnection()">Reconectar</button> <button class="eb" onclick="deleteBankConnection('${c.id}')">Eliminar</button>`;
+    const statusLabel = status === 'webview_created' || status === 'created' ? 'pendiente autorización' : status;
+    return `<tr><td style="font-weight:600">${c.banco || c.institution_id || 'Banco'}</td><td>${c.empresa || ''}</td><td>${safeAccount(c.alias || c.account_iban || c.cuenta || '')}</td><td><span class="pill ${pill}">${statusLabel}</span></td><td>${validUntil}</td><td>${c.last_sync_at ? new Date(c.last_sync_at).toLocaleString('es-ES') : '—'}</td><td>${actions}</td></tr>`;
   }).join('');
+}
+
+async function deleteBankConnection(id) {
+  if (!confirm('Eliminar esta conexión bancaria pendiente/incompleta?')) return;
+  try {
+    if (sb) {
+      const { error } = await sb.from('bank_connections').delete().eq('id', id);
+      if (error) throw error;
+    }
+    D.bankConnections = (D.bankConnections || []).filter(c => String(c.id) !== String(id));
+    setOBStatus('Conexión eliminada.', 'ok');
+    renderBankConnections();
+  } catch (err) {
+    console.error(err);
+    setOBStatus('No se pudo eliminar: ' + (err.message || err), 'err');
+  }
 }
 
 // ============================================================
@@ -2053,10 +2102,10 @@ function normalizeBankMovement(row, fileName) {
   if (!fecha || (!concepto && Math.abs(importe) < 0.0001 && Math.abs(saldo) < 0.0001)) return null;
   const m = {
     id: '',
-    empresa: inferEmpresaMovimiento(row, fileName),
+    empresa: (document.getElementById('bank-import-empresa')?.value && document.getElementById('bank-import-empresa')?.value !== 'auto') ? document.getElementById('bank-import-empresa').value : inferEmpresaMovimiento(row, fileName),
     fecha,
-    banco: String(pickAny(row, ['Banco', 'Entidad']) || '').trim(),
-    cuenta: String(pickAny(row, ['Cuenta', 'IBAN', 'Número cuenta', 'Num cuenta']) || '').trim(),
+    banco: String(pickAny(row, ['Banco', 'Entidad']) || (document.getElementById('bank-import-format')?.value !== 'auto' ? document.getElementById('bank-import-format')?.value : '') || '').trim(),
+    cuenta: String(pickAny(row, ['Cuenta', 'IBAN', 'Número cuenta', 'Num cuenta']) || document.getElementById('bank-import-alias')?.value || '').trim(),
     concepto,
     referencia: String(pickAny(row, ['Referencia', 'Ref', 'Factura', 'Documento']) || '').trim(),
     forma_pago: String(pickAny(row, ['Forma de pago', 'Tipo', 'Canal']) || '').trim(),
@@ -2080,6 +2129,8 @@ function normalizeBankMovement(row, fileName) {
     impacto_resultado: false,
     impacto_tesoreria: true,
     archivo_origen: fileName || '',
+    origen: 'extracto_manual',
+    formato_banco: document.getElementById('bank-import-format')?.value || 'auto',
     uploaded_at: new Date().toISOString()
   };
   m.id = 'mb_' + btoa(unescape(encodeURIComponent(bankMoveKey(m)))).replace(/[^a-zA-Z0-9]/g,'').slice(0,42);
@@ -2087,6 +2138,33 @@ function normalizeBankMovement(row, fileName) {
   applyIntercompanyToMovement(m, false);
   return m;
 }
+
+function downloadTextFile(filename, content, mime='text/csv;charset=utf-8') {
+  const blob = new Blob([content], { type: mime });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+async function downloadBankTemplate(kind='csv') {
+  const rows = [
+    ['Fecha','Empresa','Banco','Cuenta','Concepto','Referencia','Importe','Saldo','Forma de pago'],
+    ['2026-04-30','Corporacion','BBVA','BBVA Corporación','AEAT MODELO 111','REC-001','-6099','25000','Domiciliación'],
+    ['2026-04-30','Corporacion','Caixa','Caixa Corporación','TPV CAIXABANK','TPV-001','3200','28200','Tarjeta'],
+    ['2026-04-30','Corporacion','BBVA','BBVA Corporación','DIVIDENDO CORPORACION A BRIDGE','INT-001','-20000','8200','Transferencia'],
+    ['2026-04-30','Bridge','BBVA','BBVA Bridge','PRESTAMO INTERSOCIETARIO BRIDGE A VALLECAS','INT-002','-15000','5000','Transferencia']
+  ];
+  if (kind === 'xlsx') {
+    const XLSX = await loadXLSX();
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Movimientos');
+    XLSX.writeFile(wb, 'plantilla_movimientos_bancarios.xlsx');
+    return;
+  }
+  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(';')).join('\n');
+  downloadTextFile('plantilla_movimientos_bancarios.csv', csv);
+}
+
 async function handleBankMovementsFile(file) {
   if (!file) return;
   try {
@@ -2111,7 +2189,7 @@ async function handleBankMovementsFile(file) {
     });
     D.movimientos = Array.from(existing.values()).sort((a,b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.uploaded_at).localeCompare(String(a.uploaded_at)));
     await saveBankMovementsSupabase();
-    set('bank-upload-result', `<div class="al as2">✓ ${added} movimiento(s) nuevo(s) añadido(s). ${nuevos.length - added} duplicado(s) descartado(s). Quedan pendientes de validar.</div>`);
+    set('bank-upload-result', `<div class="al as2">✓ ${added} movimiento(s) nuevo(s) añadido(s). ${nuevos.length - added} duplicado(s) descartado(s). Quedan pendientes de validar. Fuente: extracto bancario manual gratuito.</div>`);
     renderMovimientos();
   } catch (err) {
     set('bank-upload-result', `<div class="al ae">❌ Error al importar movimientos: ${err.message}</div>`);

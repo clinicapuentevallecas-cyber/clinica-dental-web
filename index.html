@@ -593,7 +593,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-05-02-37 cargado: cuentas asociadas con categorias de ingresos Ventas y T. Intercompany");
+console.log("INDEX FINANCIERO v2026-05-02-38 cargado: aprendizaje automatico de cuentas bancarias por conceptos similares");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -2076,12 +2076,78 @@ function renderIntercompanyTable(all) {
   const rows = (all || []).filter(m => m.es_intercompany || m.tipo_movimiento === 'intercompany').slice(0,150);
   tb.innerHTML = rows.map(m => `<tr><td>${fdate(m.fecha)}</td><td>${intercompanyTypeLabel(m.tipo_intercompany)}</td><td>${m.empresa_origen || '—'}</td><td>${m.empresa_destino || '—'}</td><td>${m.concepto || '—'}</td><td class="tr" style="font-weight:700">${eur(Math.abs(Number(m.importe)||0))}</td><td><span class="pill pg">Excluido resultado</span></td></tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:22px">Sin operaciones intercompany detectadas todavía.</td></tr>';
 }
+
+function bankConceptSignature(text) {
+  let s = normTxt(String(text || ''));
+  s = s.replace(/\b(es|iban|ccc)\s*[a-z0-9]{6,}\b/g, ' ');
+  s = s.replace(/[a-z]{2}\d{8,}/g, ' ');
+  s = s.replace(/\b\d{4,}\b/g, ' ');
+  s = s.replace(/x{3,}\d*/g, ' ');
+  s = s.replace(/[^a-záéíóúüñ\s]/g, ' ');
+  const stop = new Set(['pago','recibo','factura','cargo','abono','rem','num','numero','ref','referencia','operacion','movimiento','fecha','tarj','tarjeta','compra','transferencia','traspaso','sepa','orden','adeudo','emitido','recibido','cuenta','cliente','comerc']);
+  const words = s.split(/\s+/).map(w => w.trim()).filter(w => w.length > 2 && !stop.has(w));
+  // Quitamos duplicados conservando orden para que reglas parecidas sean estables.
+  const seen = new Set();
+  const out = [];
+  for (const w of words) { if (!seen.has(w)) { seen.add(w); out.push(w); } }
+  return out.slice(0, 8).join(' ');
+}
+function bankConceptTokens(text) {
+  return bankConceptSignature(text).split(/\s+/).filter(Boolean);
+}
+function bankConceptSimilar(ruleText, conceptText) {
+  const rSig = bankConceptSignature(ruleText);
+  const cSig = bankConceptSignature(conceptText);
+  if (!rSig || !cSig) return false;
+  if (cSig.includes(rSig) || rSig.includes(cSig)) return true;
+  const r = bankConceptTokens(ruleText);
+  const c = new Set(bankConceptTokens(conceptText));
+  if (!r.length) return false;
+  const hits = r.filter(x => c.has(x)).length;
+  // Para reglas cortas exigimos coincidencia total; para largas permitimos pequeñas diferencias.
+  if (r.length <= 2) return hits === r.length;
+  return hits >= Math.max(2, Math.ceil(r.length * 0.67));
+}
+function tipoFromCuentaAsociada(cat, importe) {
+  if (cat === 'Ventas') return 'ingreso';
+  if (cat === 'T. Intercompany' || cat === 'Reparto de dividendos' || cat === 'Préstamo intersocietario') return 'intercompany';
+  return Number(importe) >= 0 ? 'ingreso' : 'gasto';
+}
+function applyCuentaImpact(m, cat, source='auto') {
+  if (!m) return m;
+  m.cuenta_asociada = cat || '';
+  m.categoria_asociada = cat || '';
+  m.estado_clasificacion = cat ? source : 'sin_clasificar';
+  if (!cat) return m;
+  if (cat === 'Ventas') {
+    m.tipo_movimiento = 'ingreso';
+    m.impacto_resultado = true;
+    m.impacto_tesoreria = true;
+    m.es_intercompany = false;
+    m.tipo_intercompany = '';
+    if (!m.estado_conciliacion || m.estado_conciliacion === 'sin_conciliar') m.estado_conciliacion = 'sin_conciliar';
+  } else if (cat === 'T. Intercompany') {
+    m.tipo_movimiento = 'intercompany';
+    m.es_intercompany = true;
+    m.tipo_intercompany = m.tipo_intercompany || 'transferencia_interna';
+    m.impacto_resultado = false;
+    m.impacto_tesoreria = true;
+    m.impacto_balance = true;
+    m.estado_conciliacion = 'conc_intercompany';
+    m.entidad_relacionada_tipo = 'intercompany';
+  } else {
+    m.tipo_movimiento = Number(m.importe) >= 0 ? 'ingreso' : 'gasto';
+    m.impacto_resultado = true;
+    m.impacto_tesoreria = true;
+  }
+  return m;
+}
 function ruleMatchesMovement(rule, m) {
   if (!rule || rule.activa === false || !m) return false;
-  const txt = normTxt(rule.texto_contiene || rule.texto || '');
+  const txt = String(rule.texto_contiene || rule.texto || '').trim();
   if (!txt) return false;
-  const concepto = normTxt([m.concepto, m.referencia].join(' '));
-  if (!concepto.includes(txt)) return false;
+  const concepto = [m.concepto, m.referencia].join(' ');
+  if (!bankConceptSimilar(txt, concepto)) return false;
   if (rule.empresa && rule.empresa !== 'Global' && m.empresa && rule.empresa !== m.empresa) return false;
   if (rule.banco && normTxt(rule.banco) && normTxt(m.banco) && !normTxt(m.banco).includes(normTxt(rule.banco))) return false;
   return true;
@@ -2095,9 +2161,9 @@ function applyBankRulesToMovement(m, overwrite=false) {
     if (!m.estado_clasificacion) m.estado_clasificacion = 'sin_clasificar';
     return m;
   }
-  m.cuenta_asociada = rule.categoria_destino || rule.cuenta_destino || '';
-  m.categoria_asociada = m.cuenta_asociada;
-  m.tipo_movimiento = rule.tipo || (Number(m.importe) >= 0 ? 'ingreso' : 'gasto');
+  const cat = rule.categoria_destino || rule.cuenta_destino || '';
+  applyCuentaImpact(m, cat, 'auto');
+  m.tipo_movimiento = rule.tipo || tipoFromCuentaAsociada(cat, m.importe);
   m.proveedor_asociado = rule.proveedor_sugerido || m.proveedor_asociado || '';
   m.regla_id = rule.id;
   m.estado_clasificacion = 'auto';
@@ -2123,10 +2189,12 @@ function ruleIdFromFields(texto, empresa, banco, tipo, cat) {
 async function addBankRuleFromForm(textoArg, catArg, tipoArg, empresaArg, bancoArg, proveedorArg) {
   const texto = String(textoArg ?? document.getElementById('rule-text')?.value ?? '').trim();
   const cat = String(catArg ?? document.getElementById('rule-cat')?.value ?? '').trim();
-  const tipo = String(tipoArg ?? document.getElementById('rule-tipo')?.value ?? 'gasto').trim();
+  let tipo = String(tipoArg ?? document.getElementById('rule-tipo')?.value ?? 'gasto').trim();
   const empresa = empresaArg || (empresaActual === 'Global' ? 'Global' : empresaActual);
   const banco = bancoArg || '';
   if (!texto || !cat) { alert('Indica texto del concepto y cuenta destino'); return; }
+  if (cat === 'Ventas') tipo = 'ingreso';
+  if (cat === 'T. Intercompany') tipo = 'intercompany';
   const rule = {
     id: ruleIdFromFields(texto, empresa, banco, tipo, cat),
     empresa, banco, texto_contiene: texto, tipo,
@@ -2146,37 +2214,22 @@ async function toggleBankRule(id, active) {
 }
 async function setMovimientoCategoria(id, value) {
   const m = (D.movimientos || []).find(x => x.id === id); if (!m) return;
-  m.cuenta_asociada = value; m.categoria_asociada = value; m.estado_clasificacion = value ? 'manual' : 'sin_clasificar';
-  if (value === 'Ventas') {
-    m.tipo_movimiento = 'ingreso';
-    m.impacto_resultado = true;
-    m.impacto_tesoreria = true;
-    m.es_intercompany = false;
-    m.tipo_intercompany = '';
-    if (!m.estado_conciliacion || m.estado_conciliacion === 'sin_conciliar') m.estado_conciliacion = 'sin_conciliar';
-  } else if (value === 'T. Intercompany') {
-    m.tipo_movimiento = 'intercompany';
-    m.es_intercompany = true;
-    m.tipo_intercompany = m.tipo_intercompany || 'transferencia_interna';
-    m.impacto_resultado = false;
-    m.impacto_tesoreria = true;
-    m.impacto_balance = true;
-    m.estado_conciliacion = 'conc_intercompany';
-    m.entidad_relacionada_tipo = 'intercompany';
-  } else if (!m.tipo_movimiento || m.tipo_movimiento === 'sin_clasificar') {
-    m.tipo_movimiento = Number(m.importe) >= 0 ? 'ingreso' : 'gasto';
-  }
+  applyCuentaImpact(m, value, value ? 'manual' : 'sin_clasificar');
   await saveBankMovementsSupabase(); renderMovimientos();
 }
 function suggestedRuleText(concepto) {
-  const clean = String(concepto || '').replace(/[0-9]{2,}/g,' ').replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]+/g,' ').trim();
-  const words = clean.split(/\s+/).filter(w => w.length > 2 && !['pago','recibo','factura','transferencia','cargo','abono'].includes(normTxt(w)));
-  return (words.slice(0,3).join(' ') || clean || '').trim();
+  return bankConceptSignature(concepto);
 }
 async function learnRuleFromMovimiento(id) {
-  const m = (D.movimientos || []).find(x => x.id === id); if (!m || !m.cuenta_asociada) { alert('Primero asigna una cuenta asociada'); return; }
-  const texto = suggestedRuleText(m.concepto);
-  await addBankRuleFromForm(texto, m.cuenta_asociada, m.tipo_movimiento || (Number(m.importe)>=0?'ingreso':'gasto'), m.empresa || empresaActual, m.banco || '', m.proveedor_asociado || '');
+  const m = (D.movimientos || []).find(x => x.id === id);
+  if (!m || !m.cuenta_asociada) { alert('Primero asigna una cuenta asociada'); return; }
+  const texto = suggestedRuleText([m.concepto, m.referencia].join(' '));
+  if (!texto) { alert('No he podido extraer un patrón de este concepto'); return; }
+  const tipo = tipoFromCuentaAsociada(m.cuenta_asociada, m.importe);
+  const before = (D.movimientos || []).filter(x => !x.cuenta_asociada && ruleMatchesMovement({texto_contiene:texto, empresa:m.empresa || empresaActual, banco:m.banco || '', activa:true}, x)).length;
+  await addBankRuleFromForm(texto, m.cuenta_asociada, tipo, m.empresa || empresaActual, m.banco || '', m.proveedor_asociado || '');
+  const after = (D.movimientos || []).filter(x => x.regla_id && x.cuenta_asociada === m.cuenta_asociada && ruleMatchesMovement({texto_contiene:texto, empresa:m.empresa || empresaActual, banco:m.banco || '', activa:true}, x)).length;
+  alert(`Regla aprendida: "${texto}" → ${m.cuenta_asociada}. Se aplicará automáticamente a movimientos con concepto similar. Coincidencias encontradas: ${Math.max(before, after)}`);
 }
 function renderReglasBancarias() {
   const catSel = document.getElementById('rule-cat');
@@ -2585,7 +2638,7 @@ function renderMovimientos() {
       <td>${fdate(m.fecha)}</td><td>${m.empresa || '—'}</td>
       <td><strong>${m.banco || '—'}</strong><br><span style="font-size:12px;color:var(--text3)">${safeAccount(m.cuenta)}</span></td>
       <td>${m.concepto || '—'}<br><span style="font-size:12px;color:var(--text3)">${m.referencia || ''}</span></td>
-      <td><select onchange="setMovimientoCategoria('${m.id}',this.value)" style="width:150px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px">${catOptions}</select><br>${cls} <button class="eb" style="font-size:11px;padding:3px 7px;margin-top:4px" onclick="learnRuleFromMovimiento('${m.id}')">Aprender</button></td>
+      <td><select onchange="setMovimientoCategoria('${m.id}',this.value)" style="width:150px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px">${catOptions}</select><br>${cls} <button class="eb" style="font-size:11px;padding:3px 7px;margin-top:4px" onclick="learnRuleFromMovimiento('${m.id}')" title="Guardar regla y aplicar a conceptos similares">Aprender</button></td>
       <td><select onchange="setMovimientoIntercompany('${m.id}',this.value)" style="width:185px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px">${icOptions}</select></td>
       <td>${getMovementReconLabel(m)}<br><span style="font-size:12px;color:var(--text3)">${m.entidad_relacionada_label || ''}</span></td>
       <td>${getImpactLabel(m)}</td>

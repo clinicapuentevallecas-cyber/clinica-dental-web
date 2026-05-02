@@ -99,6 +99,17 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 
 /* Debug panel */
 .dbg{background:#1a1a1a;color:#00ff88;font-family:'DM Mono',monospace;font-size:11px;padding:12px;border-radius:8px;margin-top:10px;max-height:200px;overflow-y:auto;white-space:pre-wrap;display:none}
+
+.mov-row{cursor:pointer}
+.mov-row:hover{background:rgba(27,95,168,.04)}
+.mov-detail-row td{background:#FBFAF8;color:var(--text2);font-size:12px;border-top:0}
+.mov-detail-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;padding:12px 4px}
+.mov-detail-item{border:1px solid var(--border);border-radius:10px;padding:9px;background:var(--bg)}
+.mov-detail-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:4px}
+.bank-icon{width:28px;height:28px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:var(--accent-light);color:var(--accent);border:1px solid rgba(27,95,168,.14)}
+.sigla{font-weight:700;font-size:12px;letter-spacing:.02em}
+.compact-check{width:18px;height:18px}
+
 </style>
 </head>
 <body>
@@ -334,7 +345,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
       <select class="sel" id="mb-estado" onchange="renderMovimientos()"><option value="all">Todos los estados</option><option value="pendiente">Pendientes</option><option value="nuevo">Nuevos</option><option value="validado">Validados</option><option value="incidencia">Con incidencia</option><option value="sin_clasificar">Sin clasificar</option><option value="auto">Clasificados auto</option><option value="intercompany">Intercompany</option><option value="dividendo">Dividendos Corp → Bridge</option><option value="prestamo_intercompany">Préstamos Bridge → Vallecas</option><option value="sin_conciliar">Sin conciliar</option><option value="conc_gasto">Conciliado con gasto</option><option value="conc_ingreso">Conciliado con ingreso</option><option value="conc_intercompany">Conciliado intercompany</option><option value="no_operativo">No operativo / ignorado</option></select>
       <span class="filter-tag" id="mb-filter-info"></span>
     </div>
-    <div class="tw"><table><thead><tr><th>Fecha</th><th>Empresa</th><th>Banco / cuenta</th><th>Concepto</th><th>Cuenta asociada</th><th>Intercompany</th><th>Conciliación</th><th>Impacto</th><th>Origen → destino</th><th class="tr">Importe</th><th class="tr">Saldo</th><th>Estado</th><th>Validado</th><th>Incidencia</th><th>Nota</th></tr></thead><tbody id="tb-movimientos"></tbody></table></div>
+    <div class="tw"><table><thead><tr><th>Fecha</th><th>Emp.</th><th>Banco</th><th class="tr">Importe</th><th>Cuenta asociada</th><th>Validado</th><th>Incidencia</th><th>Concepto</th></tr></thead><tbody id="tb-movimientos"></tbody></table></div>
   </div>
 </div>
 
@@ -593,7 +604,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-05-02-38 cargado: aprendizaje automatico de cuentas bancarias por conceptos similares");
+console.log("INDEX FINANCIERO v2026-05-02-39 cargado: tabla compacta de movimientos, detalle desplegable y traspaso entre empresas");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -2006,7 +2017,7 @@ async function saveBankRulesSupabase() {
 function cuentaAsociadaCategorias() {
   const setCats = new Set((D.gastos || []).map(g => (g.fuente_gasto || g.categoria || '').trim()).filter(Boolean));
   // Cuentas de ingresos necesarias para movimientos bancarios positivos y traspasos internos.
-  ['Ventas', 'T. Intercompany'].forEach(c => setCats.add(c));
+  ['Ventas', 'T. Intercompany', 'Traspaso entre empresas'].forEach(c => setCats.add(c));
   return Array.from(setCats).sort((a,b)=>a.localeCompare(b,'es'));
 }
 function gastoCategorias() {
@@ -2111,6 +2122,7 @@ function bankConceptSimilar(ruleText, conceptText) {
 function tipoFromCuentaAsociada(cat, importe) {
   if (cat === 'Ventas') return 'ingreso';
   if (cat === 'T. Intercompany' || cat === 'Reparto de dividendos' || cat === 'Préstamo intersocietario') return 'intercompany';
+  if (cat === 'Traspaso entre empresas') return 'traspaso';
   return Number(importe) >= 0 ? 'ingreso' : 'gasto';
 }
 function applyCuentaImpact(m, cat, source='auto') {
@@ -2135,6 +2147,17 @@ function applyCuentaImpact(m, cat, source='auto') {
     m.impacto_balance = true;
     m.estado_conciliacion = 'conc_intercompany';
     m.entidad_relacionada_tipo = 'intercompany';
+  } else if (cat === 'Traspaso entre empresas') {
+    m.tipo_movimiento = 'traspaso';
+    m.es_intercompany = false;
+    m.tipo_intercompany = '';
+    m.empresa_origen = m.empresa_origen || m.empresa || '';
+    m.empresa_destino = m.empresa_destino || m.empresa || '';
+    m.impacto_resultado = false;
+    m.impacto_tesoreria = true;
+    m.impacto_balance = false;
+    m.estado_conciliacion = 'no_operativo';
+    m.entidad_relacionada_tipo = 'traspaso';
   } else {
     m.tipo_movimiento = Number(m.importe) >= 0 ? 'ingreso' : 'gasto';
     m.impacto_resultado = true;
@@ -2605,6 +2628,44 @@ function validatedBankPosition(rows) {
   });
   return Array.from(latest.values());
 }
+
+function bankIconLabel(banco) {
+  const b = normTxt(banco || '');
+  if (b.includes('bbva')) return 'BBVA';
+  if (b.includes('caixa')) return 'CX';
+  if (b.includes('sabadell')) return 'SAB';
+  if (b.includes('cajamar')) return 'CAJ';
+  if (b.includes('kutxa') || b.includes('laboral')) return 'LK';
+  return (String(banco || 'B').trim().slice(0,3) || 'B').toUpperCase();
+}
+function empresaSigla(emp) {
+  if (emp === 'Corporacion') return 'CORP';
+  if (emp === 'Bridge') return 'BR';
+  if (emp === 'Vallecas Las') return 'VL';
+  if (emp === 'Global') return 'GLB';
+  return String(emp || '—').slice(0,4).toUpperCase();
+}
+function escAttr(v) { return String(v ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escHtml(v) { return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function movementDetailHtml(m) {
+  const items = [
+    ['Banco completo', m.banco || '—'], ['Cuenta / IBAN', safeAccount(m.cuenta) || '—'], ['Referencia', m.referencia || '—'], ['Fecha valor', fdate(m.fecha_valor || m.fecha)],
+    ['Saldo posterior', Number.isFinite(Number(m.saldo)) ? eur(Number(m.saldo)) : '—'], ['Conciliación', getMovementReconLabel(m)], ['Impacto', getImpactLabel(m)], ['Estado', m.es_nuevo ? 'Nuevo' : 'Revisado'],
+    ['Origen → destino', (m.empresa_origen || '—') + ' → ' + (m.empresa_destino || '—')], ['Archivo origen', m.archivo_origen || '—'], ['Lote importación', m.import_batch_id || '—'], ['Texto bruto', m.raw_text || m.concepto || '—']
+  ];
+  return `<tr class="mov-detail-row" id="mov-detail-${m.id}" style="display:none"><td colspan="8"><div class="mov-detail-grid">${items.map(([k,v]) => `<div class="mov-detail-item"><div class="mov-detail-label">${k}</div><div>${v}</div></div>`).join('')}</div><div style="padding:0 4px 12px"><label style="font-size:12px;color:var(--text3)">Nota / incidencia</label><br><input value="${escAttr(m.nota_incidencia || '')}" onchange="setMovimientoField('${m.id}','nota_incidencia',this.value)" placeholder="Añadir nota" style="width:100%;max-width:520px;padding:8px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);font-family:'DM Sans';font-size:12px"></div></td></tr>`;
+}
+function toggleMovementDetail(id) {
+  const el = document.getElementById('mov-detail-' + id);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'table-row' : 'none';
+}
+function rowClickToggle(ev, id) {
+  const tag = String(ev.target?.tagName || '').toLowerCase();
+  if (['select','option','input','button','a','textarea','label'].includes(tag) || ev.target.closest('select,button,input,a,textarea')) return;
+  toggleMovementDetail(id);
+}
+
 function renderMovimientos() {
   const rows = filterBankMovements();
   const all = filterEmpresaFor(D.movimientos || [], empresaActual, 'empresa');
@@ -2633,24 +2694,20 @@ function renderMovimientos() {
   tbody.innerHTML = rows.slice(0, 300).map(m => {
     const cls = m.estado_clasificacion === 'auto' ? '<span class="pill pg">Auto</span>' : (m.cuenta_asociada ? '<span class="pill pb">Manual</span>' : '<span class="pill pz">Sin clasificar</span>');
     const catOptions = [''].concat(cats).map(c => `<option value="${c}" ${String(m.cuenta_asociada || m.categoria_asociada || '')===c?'selected':''}>${c || 'Sin cuenta'}</option>`).join('');
-    const icOptions = `<option value="" ${!m.es_intercompany?'selected':''}>No</option><option value="dividendo" ${m.tipo_intercompany==='dividendo'?'selected':''}>Dividendo Corp → Bridge</option><option value="prestamo_intercompany" ${m.tipo_intercompany==='prestamo_intercompany'?'selected':''}>Préstamo Bridge → Vallecas</option>`;
-    return `<tr>
-      <td>${fdate(m.fecha)}</td><td>${m.empresa || '—'}</td>
-      <td><strong>${m.banco || '—'}</strong><br><span style="font-size:12px;color:var(--text3)">${safeAccount(m.cuenta)}</span></td>
-      <td>${m.concepto || '—'}<br><span style="font-size:12px;color:var(--text3)">${m.referencia || ''}</span></td>
-      <td><select onchange="setMovimientoCategoria('${m.id}',this.value)" style="width:150px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px">${catOptions}</select><br>${cls} <button class="eb" style="font-size:11px;padding:3px 7px;margin-top:4px" onclick="learnRuleFromMovimiento('${m.id}')" title="Guardar regla y aplicar a conceptos similares">Aprender</button></td>
-      <td><select onchange="setMovimientoIntercompany('${m.id}',this.value)" style="width:185px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px">${icOptions}</select></td>
-      <td>${getMovementReconLabel(m)}<br><span style="font-size:12px;color:var(--text3)">${m.entidad_relacionada_label || ''}</span></td>
-      <td>${getImpactLabel(m)}</td>
-      <td><span style="font-size:12px;color:var(--text3)">${m.empresa_origen || '—'} → ${m.empresa_destino || '—'}</span></td>
-      <td class="tr" style="font-weight:700;color:${(Number(m.importe)||0)>=0?'var(--green)':'var(--red)'}">${eur(Number(m.importe)||0)}</td>
-      <td class="tr">${m.saldo ? eur(Number(m.saldo)||0) : '—'}</td>
-      <td>${m.es_nuevo ? '<span class="pill pz">Nuevo</span>' : '<span class="pill pb">Revisado</span>'}</td>
-      <td><input type="checkbox" ${m.validado ? 'checked' : ''} onchange="setMovimientoField('${m.id}','validado',this.checked)"></td>
-      <td><input type="checkbox" ${m.incidencia ? 'checked' : ''} onchange="setMovimientoField('${m.id}','incidencia',this.checked)"></td>
-      <td><input value="${String(m.nota_incidencia || '').replace(/"/g,'&quot;')}" onchange="setMovimientoField('${m.id}','nota_incidencia',this.value)" placeholder="Nota" style="width:150px;padding:5px 7px;border:1px solid var(--border2);border-radius:7px;background:var(--bg);font-family:'DM Sans';font-size:12px"></td>
+    const conceptoCorto = escHtml(m.concepto || '—');
+    const detalle = movementDetailHtml(m);
+    const row = `<tr class="mov-row" onclick="rowClickToggle(event,'${m.id}')">
+      <td>${fdate(m.fecha)}</td>
+      <td><span class="sigla" title="${escAttr(m.empresa || '')}">${empresaSigla(m.empresa)}</span></td>
+      <td><span class="bank-icon" title="${escAttr(m.banco || '')}">${bankIconLabel(m.banco)}</span></td>
+      <td class="tr" style="font-weight:800;color:${(Number(m.importe)||0)>=0?'var(--green)':'var(--red)'}">${eur(Number(m.importe)||0)}</td>
+      <td><select onchange="setMovimientoCategoria('${m.id}',this.value)" style="width:190px;padding:7px 9px;border:1px solid var(--border2);border-radius:9px;background:var(--bg);font-family:'DM Sans';font-size:12px">${catOptions}</select><br>${cls} <button class="eb" style="font-size:11px;padding:3px 7px;margin-top:4px" onclick="learnRuleFromMovimiento('${m.id}')" title="Guardar regla y aplicar a conceptos similares">Aprender</button></td>
+      <td><input class="compact-check" type="checkbox" ${m.validado ? 'checked' : ''} onchange="setMovimientoField('${m.id}','validado',this.checked)"></td>
+      <td><input class="compact-check" type="checkbox" ${m.incidencia ? 'checked' : ''} onchange="setMovimientoField('${m.id}','incidencia',this.checked)"></td>
+      <td><strong>${conceptoCorto}</strong><br><span style="font-size:12px;color:var(--text3)">${getMovementReconLabel(m)} ${getImpactLabel(m)}</span></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="15" style="text-align:center;color:var(--text3);padding:26px">Sin movimientos bancarios. Sube un Excel o CSV para empezar a validar la tesorería.</td></tr>';
+    return row + detalle;
+  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:26px">Sin movimientos bancarios. Sube un Excel o CSV para empezar a validar la tesorería.</td></tr>';
   renderIntercompanyTable(all);
   renderConciliacionTable(all);
 }

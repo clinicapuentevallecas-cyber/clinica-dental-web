@@ -593,7 +593,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-05-02-34 cargado: importador bancario multiformato BBVA Caixa Sabadell Cajamar Kutxa sin adaptar archivos");
+console.log("INDEX FINANCIERO v2026-05-02-35 cargado: movimientos bancarios multiformato guardados obligatoriamente en Supabase");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1877,18 +1877,99 @@ function bankMoveKey(m) {
     .map(x => normTxt(String(x))).join('|');
 }
 function loadBankMovementsLocal() {
-  try { return JSON.parse(localStorage.getItem('bank_movimientos') || '[]'); } catch (_) { return []; }
+  try { return JSON.parse(localStorage.getItem('bank_movimientos_backup') || '[]'); } catch (_) { return []; }
 }
 function saveBankMovementsLocal() {
-  localStorage.setItem('bank_movimientos', JSON.stringify(D.movimientos || []));
+  localStorage.setItem('bank_movimientos_backup', JSON.stringify(D.movimientos || []));
 }
-async function saveBankMovementsSupabase() {
+function bankMovementDbPayload(m, batchId=null) {
+  const payload = {
+    id: String(m.id || '').trim(),
+    empresa: m.empresa || '',
+    fecha: m.fecha || null,
+    fecha_valor: m.fecha_valor || m.fecha || null,
+    banco: m.banco || '',
+    cuenta: m.cuenta || '',
+    iban_mask: m.iban_mask || maskIban(m.cuenta || ''),
+    concepto: m.concepto || '',
+    referencia: m.referencia || '',
+    forma_pago: m.forma_pago || '',
+    importe: Number(m.importe) || 0,
+    saldo: Number(m.saldo) || 0,
+    estado_validacion: m.estado_validacion || 'pendiente',
+    validado: !!m.validado,
+    es_nuevo: m.es_nuevo !== false,
+    incidencia: !!m.incidencia,
+    nota_incidencia: m.nota_incidencia || '',
+    cuenta_asociada: m.cuenta_asociada || '',
+    categoria_asociada: m.categoria_asociada || '',
+    tipo_movimiento: m.tipo_movimiento || (Number(m.importe) >= 0 ? 'ingreso' : 'gasto'),
+    estado_clasificacion: m.estado_clasificacion || 'sin_clasificar',
+    proveedor_asociado: m.proveedor_asociado || '',
+    regla_id: m.regla_id || '',
+    estado_conciliacion: m.estado_conciliacion || 'sin_conciliar',
+    entidad_relacionada_tipo: m.entidad_relacionada_tipo || '',
+    entidad_relacionada_id: m.entidad_relacionada_id || '',
+    entidad_relacionada_label: m.entidad_relacionada_label || '',
+    sugerencia_conciliacion_tipo: m.sugerencia_conciliacion_tipo || '',
+    sugerencia_conciliacion_id: m.sugerencia_conciliacion_id || '',
+    sugerencia_conciliacion_label: m.sugerencia_conciliacion_label || '',
+    impacto_resultado: !!m.impacto_resultado,
+    impacto_tesoreria: m.impacto_tesoreria !== false,
+    impacto_balance: !!m.impacto_balance,
+    es_intercompany: !!m.es_intercompany,
+    tipo_intercompany: m.tipo_intercompany || '',
+    empresa_origen: m.empresa_origen || '',
+    empresa_destino: m.empresa_destino || '',
+    movimiento_relacionado_id: m.movimiento_relacionado_id || '',
+    nota_intercompany: m.nota_intercompany || '',
+    archivo_origen: m.archivo_origen || '',
+    origen: m.origen || 'extracto_manual',
+    formato_banco: m.formato_banco || '',
+    import_batch_id: batchId || m.import_batch_id || null,
+    duplicate_key: m.duplicate_key || bankMoveKey(m),
+    fuente_prioritaria: m.fuente_prioritaria || 'banco',
+    requiere_conciliacion: m.requiere_conciliacion !== false,
+    fecha_importacion: m.fecha_importacion || new Date().toISOString(),
+    uploaded_at: m.uploaded_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    updated_by: currentUser?.id || null
+  };
+  return payload;
+}
+async function createBankImportBatch(meta, total, added, duplicates) {
+  if (!sb) return null;
+  const row = {
+    empresa: meta?.empresa || document.getElementById('bank-import-empresa')?.value || '',
+    banco: meta?.banco || '',
+    cuenta_alias: meta?.cuenta_alias || document.getElementById('bank-import-alias')?.value || '',
+    formato_banco: meta?.formato_banco || document.getElementById('bank-import-format')?.value || 'auto',
+    archivo_nombre: meta?.archivo_nombre || '',
+    registros_total: total || 0,
+    registros_nuevos: added || 0,
+    registros_duplicados: duplicates || 0,
+    estado: 'procesado'
+  };
+  const { data, error } = await sb.from('bank_import_batches').insert(row).select('id').single();
+  if (error) { console.warn('[Import batch] No se pudo crear lote:', error.message); return null; }
+  return data?.id || null;
+}
+async function saveBankMovementsSupabase(importMeta=null) {
+  // Guardamos una copia local solo como respaldo técnico, pero la fuente real es Supabase.
   saveBankMovementsLocal();
-  if (!sb || !(D.movimientos || []).length) return;
-  try {
-    const { error } = await sb.from('movimientos_bancarios').upsert(D.movimientos, { onConflict: 'id' });
-    if (error) console.warn('[Movimientos bancarios] No se pudieron guardar en Supabase. Uso localStorage.', error.message);
-  } catch (err) { console.warn('[Movimientos bancarios] Tabla no disponible. Uso localStorage.', err.message || err); }
+  if (!sb) throw new Error('No hay conexión con Supabase. Revisa Configuración.');
+  const { data: sess } = await sb.auth.getSession();
+  if (!sess?.session) throw new Error('Debes iniciar sesión para guardar movimientos bancarios en Supabase.');
+  if (!(D.movimientos || []).length) return { saved: 0, batchId: null };
+
+  const batchId = importMeta ? await createBankImportBatch(importMeta, importMeta.total, importMeta.added, importMeta.duplicates) : null;
+  const rows = (D.movimientos || []).map(m => bankMovementDbPayload(m, batchId));
+  for (let i = 0; i < rows.length; i += 300) {
+    const chunk = rows.slice(i, i + 300);
+    const { error } = await sb.from('movimientos_bancarios').upsert(chunk, { onConflict: 'id' });
+    if (error) throw new Error('Supabase no guardó los movimientos bancarios: ' + error.message);
+  }
+  return { saved: rows.length, batchId };
 }
 function loadBankRulesLocal() {
   try { return JSON.parse(localStorage.getItem('bank_rules') || '[]'); } catch (_) { return []; }
@@ -2275,9 +2356,10 @@ async function handleBankMovementsFile(file) {
       if (!existing.has(key)) { existing.set(key, m); added++; }
     });
     D.movimientos = Array.from(existing.values()).sort((a,b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.uploaded_at).localeCompare(String(a.uploaded_at)));
-    await saveBankMovementsSupabase();
     const detected = Array.from(new Set(formatos.filter(Boolean))).join(', ') || 'automático';
-    set('bank-upload-result', `<div class="al as2">✓ ${added} movimiento(s) nuevo(s) añadido(s). ${nuevos.length - added} duplicado(s) descartado(s). Formato detectado: <strong>${detected}</strong>. Archivo leído sin adaptar columnas.</div>`);
+    const result = await saveBankMovementsSupabase({ archivo_nombre: file.name, banco: detected, formato_banco: detected, total: nuevos.length, added, duplicates: nuevos.length - added });
+    await loadDB();
+    set('bank-upload-result', `<div class="al as2">✓ ${added} movimiento(s) nuevo(s) guardado(s) en Supabase. ${nuevos.length - added} duplicado(s) descartado(s). Formato detectado: <strong>${detected}</strong>. Lote: ${result.batchId || 'sin lote'}.</div>`);
     renderMovimientos();
   } catch (err) {
     set('bank-upload-result', `<div class="al ae">❌ Error al importar movimientos: ${err.message}</div>`);

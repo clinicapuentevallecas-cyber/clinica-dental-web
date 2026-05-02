@@ -593,7 +593,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-04-30-33 cargado: modo gratis con extractos bancarios, Powens beta y conciliacion anti-duplicados");
+console.log("INDEX FINANCIERO v2026-05-02-34 cargado: importador bancario multiformato BBVA Caixa Sabadell Cajamar Kutxa sin adaptar archivos");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -2071,20 +2071,25 @@ function renderReglasBancarias() {
 
 function pickAny(row, names) {
   const keys = Object.keys(row || {});
+  const clean = v => normTxt(v).replace(/[^a-z0-9]/g, '');
   for (const n of names) {
-    const target = normTxt(n);
-    const k = keys.find(x => normTxt(x) === target) || keys.find(x => normTxt(x).includes(target));
+    const target = clean(n);
+    const k = keys.find(x => clean(x) === target) || keys.find(x => clean(x).includes(target) || target.includes(clean(x)));
     if (k && row[k] != null && row[k] !== '') return row[k];
   }
   return '';
 }
 function excelDateToISO(v) {
-  if (v instanceof Date) return v.toISOString().slice(0,10);
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
   if (typeof v === 'number' && v > 20000 && v < 80000) {
     const d = new Date(Math.round((v - 25569) * 86400 * 1000));
     return d.toISOString().slice(0,10);
   }
-  return fixDate(v) || String(v || '').slice(0,10);
+  const s = String(v || '').trim();
+  // Permite textos tipo "06/04/2026 Hora 13:16"
+  const m = s.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/);
+  if (m) return fixDate(m[1]);
+  return fixDate(v) || (s.match(/^\d{4}-\d{2}-\d{2}/) ? s.slice(0,10) : null);
 }
 function inferEmpresaMovimiento(row, fileName) {
   const e = String(pickAny(row, ['Empresa', 'Sociedad', 'Clinica']) || '').trim();
@@ -2094,21 +2099,98 @@ function inferEmpresaMovimiento(row, fileName) {
   if (f.includes('vallecas')) return 'Vallecas Las';
   return empresaActual !== 'Global' ? empresaActual : 'Corporacion';
 }
+function cellText(v) {
+  if (v == null) return '';
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
+  return String(v).trim();
+}
+function simpleTxt(v) { return normTxt(v).replace(/[^a-z0-9]/g, ''); }
+function rowText(row) { return (row || []).map(cellText).filter(Boolean).join(' '); }
+function findHeaderIndex(raw) {
+  return raw.findIndex(r => {
+    const keys = (r || []).map(simpleTxt).filter(Boolean);
+    const hasDate = keys.some(t => ['fecha','fechavalor','fcontable','fvalor','foperativa','fechaoperacion','date'].includes(t) || t.includes('fecha'));
+    const hasAmount = keys.some(t => ['importe','importeeur','amount','cargoabono','saldo'].includes(t) || t.includes('importe') || t.includes('saldo'));
+    const hasConcept = keys.some(t => ['concepto','movimiento','descripcion','descripcion','detalle','observaciones','masdatos'].includes(t) || t.includes('concepto') || t.includes('movimiento'));
+    return keys.length >= 3 && hasDate && hasAmount && hasConcept;
+  });
+}
+function makeUniqueHeaders(arr) {
+  const seen = {};
+  return (arr || []).map((h, i) => {
+    let base = String(h || ('Columna ' + (i + 1))).trim();
+    if (!base) base = 'Columna ' + (i + 1);
+    const k = simpleTxt(base) || ('col' + i);
+    seen[k] = (seen[k] || 0) + 1;
+    return seen[k] > 1 ? `${base} ${seen[k]}` : base;
+  });
+}
+function detectBankContext(raw, fileName) {
+  const manual = document.getElementById('bank-import-format')?.value || 'auto';
+  const text = normTxt((fileName || '') + ' ' + (raw || []).slice(0, 35).map(rowText).join(' '));
+  let banco = '';
+  if (manual && manual !== 'auto') banco = manual;
+  else if (text.includes('banco bilbao') || text.includes('bbva')) banco = 'BBVA';
+  else if (text.includes('caixabank') || text.includes('la caixa') || text.includes('caixa')) banco = 'Caixa';
+  else if (text.includes('sabadell') || text.includes('bancsabadell')) banco = 'Sabadell';
+  else if (text.includes('cajamar') || text.includes('tajamar')) banco = 'Cajamar';
+  else if (text.includes('laboral kutxa') || text.includes('kutxa')) banco = 'Laboral Kutxa';
+
+  let cuenta = '';
+  const all = (raw || []).slice(0, 45).map(rowText).join(' ');
+  const iban = all.match(/ES[0-9A-Z\s\-]{18,40}/i);
+  if (iban) cuenta = iban[0].replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 34);
+  if (!cuenta) {
+    const ccc = all.match(/\b\d{4}-\d{4}-\d{2}-\d{10}\b/);
+    if (ccc) cuenta = ccc[0];
+  }
+  if (!cuenta) cuenta = document.getElementById('bank-import-alias')?.value || '';
+
+  let alias = document.getElementById('bank-import-alias')?.value || '';
+  if (!alias && banco) alias = banco + ' ' + (cuenta ? '· ' + maskIban(cuenta) : '');
+  return { banco, cuenta, alias, formato: banco || manual || 'auto' };
+}
+function buildRowsFromBankSheet(raw, fileName) {
+  const headerIdx = findHeaderIndex(raw);
+  if (headerIdx < 0) throw new Error('No he encontrado cabecera bancaria reconocible. Formatos soportados: BBVA, Caixa, Sabadell, Cajamar y Laboral Kutxa.');
+  const ctx = detectBankContext(raw, fileName);
+  const headers = makeUniqueHeaders(raw[headerIdx]);
+  return raw.slice(headerIdx + 1).map((arr, idx) => {
+    const o = { __context: ctx, __rownum: headerIdx + idx + 2 };
+    headers.forEach((h, i) => { o[h] = arr[i]; });
+    return o;
+  });
+}
+function joinedConcept(row) {
+  const parts = [
+    pickAny(row, ['Concepto','Descripción','Descripcion','Detalle','Movimiento','Narrativa']),
+    pickAny(row, ['Más datos','Mas datos','Observaciones','Detalle ampliado']),
+    pickAny(row, ['Referencia 1','Referencia 2'])
+  ].map(v => String(v || '').trim()).filter(Boolean);
+  return Array.from(new Set(parts)).join(' · ').replace(/\s+/g, ' ').trim();
+}
 function normalizeBankMovement(row, fileName) {
-  const fecha = excelDateToISO(pickAny(row, ['Fecha', 'Fecha valor', 'Fecha operación', 'F. operación', 'Date']));
-  const importe = parseNum(pickAny(row, ['Importe', 'Importe EUR', 'Movimiento', 'Amount', 'Cargo/Abono']));
-  const saldo = parseNum(pickAny(row, ['Saldo', 'Balance', 'Saldo contable', 'Saldo disponible']));
-  const concepto = String(pickAny(row, ['Concepto', 'Descripción', 'Descripcion', 'Detalle', 'Movimiento', 'Narrativa']) || '').trim();
-  if (!fecha || (!concepto && Math.abs(importe) < 0.0001 && Math.abs(saldo) < 0.0001)) return null;
+  const ctx = row.__context || {};
+  const fecha = excelDateToISO(pickAny(row, ['Fecha','F. CONTABLE','F CONTABLE','F. Operativa','F Operativa','Fecha operación','Fecha operacion','Date']))
+    || excelDateToISO(pickAny(row, ['Fecha valor','F. VALOR','F Valor']));
+  const fechaValor = excelDateToISO(pickAny(row, ['Fecha valor','F. VALOR','F Valor']));
+  const importeRaw = pickAny(row, ['Importe','Importe EUR','Amount','Cargo/Abono','Importe operación','Importe operacion']);
+  const importe = parseNum(importeRaw);
+  const saldo = parseNum(pickAny(row, ['Saldo','Balance','Saldo contable','Saldo disponible','Saldo Posterior']));
+  const concepto = joinedConcept(row);
+  if (!fecha || Math.abs(importe) < 0.0001 || /^total/i.test(String(concepto || ''))) return null;
+  const selectedEmpresa = document.getElementById('bank-import-empresa')?.value;
   const m = {
     id: '',
-    empresa: (document.getElementById('bank-import-empresa')?.value && document.getElementById('bank-import-empresa')?.value !== 'auto') ? document.getElementById('bank-import-empresa').value : inferEmpresaMovimiento(row, fileName),
+    empresa: (selectedEmpresa && selectedEmpresa !== 'auto') ? selectedEmpresa : inferEmpresaMovimiento(row, fileName),
     fecha,
-    banco: String(pickAny(row, ['Banco', 'Entidad']) || (document.getElementById('bank-import-format')?.value !== 'auto' ? document.getElementById('bank-import-format')?.value : '') || '').trim(),
-    cuenta: String(pickAny(row, ['Cuenta', 'IBAN', 'Número cuenta', 'Num cuenta']) || document.getElementById('bank-import-alias')?.value || '').trim(),
+    fecha_valor: fechaValor || fecha,
+    banco: String(ctx.banco || pickAny(row, ['Banco', 'Entidad']) || '').trim(),
+    cuenta: String(ctx.alias || ctx.cuenta || pickAny(row, ['Cuenta', 'IBAN', 'Número cuenta', 'Num cuenta']) || '').trim(),
+    iban_mask: ctx.cuenta ? maskIban(ctx.cuenta) : '',
     concepto,
-    referencia: String(pickAny(row, ['Referencia', 'Ref', 'Factura', 'Documento']) || '').trim(),
-    forma_pago: String(pickAny(row, ['Forma de pago', 'Tipo', 'Canal']) || '').trim(),
+    referencia: String(pickAny(row, ['Referencia', 'Ref', 'Factura', 'Documento', 'Remesa', 'REMESA', 'Referencia 1', 'Referencia 2']) || '').trim(),
+    forma_pago: String(pickAny(row, ['Forma de pago', 'Tipo', 'Canal', 'Código', 'CODIGO', 'CÓDIGO']) || '').trim(),
     importe,
     saldo,
     estado_validacion: 'pendiente',
@@ -2130,7 +2212,7 @@ function normalizeBankMovement(row, fileName) {
     impacto_tesoreria: true,
     archivo_origen: fileName || '',
     origen: 'extracto_manual',
-    formato_banco: document.getElementById('bank-import-format')?.value || 'auto',
+    formato_banco: ctx.formato || document.getElementById('bank-import-format')?.value || 'auto',
     uploaded_at: new Date().toISOString()
   };
   m.id = 'mb_' + btoa(unescape(encodeURIComponent(bankMoveKey(m)))).replace(/[^a-zA-Z0-9]/g,'').slice(0,42);
@@ -2168,19 +2250,24 @@ async function downloadBankTemplate(kind='csv') {
 async function handleBankMovementsFile(file) {
   if (!file) return;
   try {
-    set('bank-upload-result', '<div class="al"><div class="sp"></div> Procesando movimientos...</div>');
+    set('bank-upload-result', '<div class="al"><div class="sp"></div> Procesando movimientos bancarios multiformato...</div>');
     const XLSX = await loadXLSX();
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
-    const headerIdx = raw.findIndex(r => (r || []).some(c => normTxt(c).includes('fecha')) && (r || []).some(c => normTxt(c).includes('importe') || normTxt(c).includes('saldo')));
-    if (headerIdx < 0) throw new Error('No he encontrado una fila de cabecera con Fecha e Importe/Saldo');
-    const headers = raw[headerIdx].map((h, i) => String(h || ('Columna ' + (i+1))).trim());
-    const rows = raw.slice(headerIdx + 1).map(arr => {
-      const o = {}; headers.forEach((h, i) => { o[h] = arr[i]; }); return o;
-    });
-    const nuevos = rows.map(r => normalizeBankMovement(r, file.name)).filter(Boolean);
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true, raw: true, codepage: 65001 });
+    let nuevos = [];
+    let formatos = [];
+    for (const shName of wb.SheetNames.slice(0, 3)) {
+      const ws = wb.Sheets[shName];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true, blankrows: false });
+      if (!raw || !raw.length) continue;
+      let rows;
+      try { rows = buildRowsFromBankSheet(raw, file.name); }
+      catch(e) { continue; }
+      const ctx = (rows[0] && rows[0].__context) || detectBankContext(raw, file.name);
+      if (ctx.banco) formatos.push(ctx.banco);
+      nuevos = nuevos.concat(rows.map(r => normalizeBankMovement(r, file.name)).filter(Boolean));
+    }
+    if (!nuevos.length) throw new Error('No se han detectado movimientos válidos. Revisa que el archivo sea un extracto de BBVA, Caixa, Sabadell, Cajamar o Laboral Kutxa.');
     const existing = new Map((D.movimientos || []).map(m => [bankMoveKey(m), m]));
     let added = 0;
     nuevos.forEach(m => {
@@ -2189,7 +2276,8 @@ async function handleBankMovementsFile(file) {
     });
     D.movimientos = Array.from(existing.values()).sort((a,b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.uploaded_at).localeCompare(String(a.uploaded_at)));
     await saveBankMovementsSupabase();
-    set('bank-upload-result', `<div class="al as2">✓ ${added} movimiento(s) nuevo(s) añadido(s). ${nuevos.length - added} duplicado(s) descartado(s). Quedan pendientes de validar. Fuente: extracto bancario manual gratuito.</div>`);
+    const detected = Array.from(new Set(formatos.filter(Boolean))).join(', ') || 'automático';
+    set('bank-upload-result', `<div class="al as2">✓ ${added} movimiento(s) nuevo(s) añadido(s). ${nuevos.length - added} duplicado(s) descartado(s). Formato detectado: <strong>${detected}</strong>. Archivo leído sin adaptar columnas.</div>`);
     renderMovimientos();
   } catch (err) {
     set('bank-upload-result', `<div class="al ae">❌ Error al importar movimientos: ${err.message}</div>`);

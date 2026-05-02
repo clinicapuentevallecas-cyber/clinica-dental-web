@@ -593,7 +593,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-05-02-35 cargado: movimientos bancarios multiformato guardados obligatoriamente en Supabase");
+console.log("INDEX FINANCIERO v2026-05-02-36 cargado: movimientos bancarios guardados en Supabase con deduplicacion previa al upsert");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -1963,9 +1963,26 @@ async function saveBankMovementsSupabase(importMeta=null) {
   if (!(D.movimientos || []).length) return { saved: 0, batchId: null };
 
   const batchId = importMeta ? await createBankImportBatch(importMeta, importMeta.total, importMeta.added, importMeta.duplicates) : null;
-  const rows = (D.movimientos || []).map(m => bankMovementDbPayload(m, batchId));
-  for (let i = 0; i < rows.length; i += 300) {
-    const chunk = rows.slice(i, i + 300);
+
+  // Importante: Supabase/Postgres no permite que un mismo UPSERT contenga dos filas
+  // con la misma clave de conflicto. Si un extracto trae duplicados o quedaron copias
+  // de versiones anteriores en localStorage, primero consolidamos por ID.
+  const byId = new Map();
+  for (const m of (D.movimientos || [])) {
+    const row = bankMovementDbPayload(m, batchId);
+    if (!row.id) row.id = 'mb_' + btoa(unescape(encodeURIComponent(row.duplicate_key || bankMoveKey(row)))).replace(/[^a-zA-Z0-9]/g,'').slice(0,42);
+    // Si hay duplicado, conservamos el más reciente / más completo.
+    const prev = byId.get(row.id);
+    if (!prev || String(row.updated_at || '') >= String(prev.updated_at || '')) byId.set(row.id, row);
+  }
+  const rows = Array.from(byId.values());
+
+  // También dejamos D.movimientos limpio para que no vuelva a intentar subir duplicados.
+  D.movimientos = rows.map(r => ({ ...r })).sort((a,b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.uploaded_at || '').localeCompare(String(a.uploaded_at || '')));
+  saveBankMovementsLocal();
+
+  for (let i = 0; i < rows.length; i += 250) {
+    const chunk = rows.slice(i, i + 250);
     const { error } = await sb.from('movimientos_bancarios').upsert(chunk, { onConflict: 'id' });
     if (error) throw new Error('Supabase no guardó los movimientos bancarios: ' + error.message);
   }

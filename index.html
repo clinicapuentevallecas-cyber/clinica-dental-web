@@ -593,7 +593,7 @@ tr:hover td{background:var(--bg)}.tr{text-align:right}
 </div>
 
 <script>
-console.log("INDEX FINANCIERO v2026-05-02-36 cargado: movimientos bancarios guardados en Supabase con deduplicacion previa al upsert");
+console.log("INDEX FINANCIERO v2026-05-02-37 cargado: cuentas asociadas con categorias de ingresos Ventas y T. Intercompany");
 // ============================================================
 // GOOGLE SHEETS CSV URLs
 // Cabeceras confirmadas:
@@ -2003,9 +2003,14 @@ async function saveBankRulesSupabase() {
     }
   } catch (err) { console.warn('[Reglas conciliación] Tabla no disponible. Uso localStorage.', err.message || err); }
 }
-function gastoCategorias() {
+function cuentaAsociadaCategorias() {
   const setCats = new Set((D.gastos || []).map(g => (g.fuente_gasto || g.categoria || '').trim()).filter(Boolean));
+  // Cuentas de ingresos necesarias para movimientos bancarios positivos y traspasos internos.
+  ['Ventas', 'T. Intercompany'].forEach(c => setCats.add(c));
   return Array.from(setCats).sort((a,b)=>a.localeCompare(b,'es'));
+}
+function gastoCategorias() {
+  return cuentaAsociadaCategorias();
 }
 
 function intercompanyTypeLabel(t) {
@@ -2142,7 +2147,25 @@ async function toggleBankRule(id, active) {
 async function setMovimientoCategoria(id, value) {
   const m = (D.movimientos || []).find(x => x.id === id); if (!m) return;
   m.cuenta_asociada = value; m.categoria_asociada = value; m.estado_clasificacion = value ? 'manual' : 'sin_clasificar';
-  if (!m.tipo_movimiento || m.tipo_movimiento === 'sin_clasificar') m.tipo_movimiento = Number(m.importe) >= 0 ? 'ingreso' : 'gasto';
+  if (value === 'Ventas') {
+    m.tipo_movimiento = 'ingreso';
+    m.impacto_resultado = true;
+    m.impacto_tesoreria = true;
+    m.es_intercompany = false;
+    m.tipo_intercompany = '';
+    if (!m.estado_conciliacion || m.estado_conciliacion === 'sin_conciliar') m.estado_conciliacion = 'sin_conciliar';
+  } else if (value === 'T. Intercompany') {
+    m.tipo_movimiento = 'intercompany';
+    m.es_intercompany = true;
+    m.tipo_intercompany = m.tipo_intercompany || 'transferencia_interna';
+    m.impacto_resultado = false;
+    m.impacto_tesoreria = true;
+    m.impacto_balance = true;
+    m.estado_conciliacion = 'conc_intercompany';
+    m.entidad_relacionada_tipo = 'intercompany';
+  } else if (!m.tipo_movimiento || m.tipo_movimiento === 'sin_clasificar') {
+    m.tipo_movimiento = Number(m.importe) >= 0 ? 'ingreso' : 'gasto';
+  }
   await saveBankMovementsSupabase(); renderMovimientos();
 }
 function suggestedRuleText(concepto) {

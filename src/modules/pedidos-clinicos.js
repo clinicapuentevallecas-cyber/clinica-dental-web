@@ -1,7 +1,7 @@
-// Modulo Pedidos clinicos - v47
+// Modulo Pedidos clinicos - v48
 // Produccion clinica, catalogos, materiales, recetas, precios y pedido recomendado en modo manual sin API.
 (function () {
-  const VERSION = '2026-05-06-47';
+  const VERSION = '2026-05-06-48';
 
   const FAMILIAS_TTO = [
     'Cirugía', 'Implantes', 'Prótesis', 'Conservadora', 'Endodoncia',
@@ -303,17 +303,19 @@
   }
 
   function renderGlobalFilters(includeMaterial = false, includeProveedor = false) {
+    const desdeVal = state.filters.desde || monthStart();
+    const hastaVal = state.filters.hasta || monthEnd();
     return `<div class="card mb ped-filter-card"><div class="ped-filters">
-      <select data-filter="periodo"><option value="mes" ${state.filters.periodo==='mes'?'selected':''}>Mes en curso</option><option value="rango" ${state.filters.periodo==='rango'?'selected':''}>Fecha a fecha</option></select>
-      <input type="date" data-filter="desde" value="${esc(state.filters.desde)}" ${state.filters.periodo==='mes'?'disabled':''}>
-      <input type="date" data-filter="hasta" value="${esc(state.filters.hasta)}" ${state.filters.periodo==='mes'?'disabled':''}>
-      <select data-filter="familia">${options(FAMILIAS_TTO, state.filters.familia, 'Todas las familias TTO')}</select>
-      <select data-filter="doctor">${doctorOptions(state.filters.doctor)}</select>
-      <select data-filter="tratamiento">${treatmentOptions(state.filters.tratamiento)}</select>
-      ${includeMaterial ? `<select data-filter="familiaMaterial">${options(FAMILIAS_MATERIAL, state.filters.familiaMaterial, 'Todas las familias material')}</select>` : ''}
-      ${includeProveedor ? `<select data-filter="proveedor">${proveedorOptions(state.filters.proveedor)}</select>` : ''}
+      <label class="filter-field"><span>Periodo</span><select data-filter="periodo"><option value="mes" ${state.filters.periodo==='mes'?'selected':''}>Mes en curso</option><option value="rango" ${state.filters.periodo==='rango'?'selected':''}>Fecha a fecha</option></select></label>
+      <label class="filter-field"><span>Desde</span><input type="date" data-filter="desde" value="${esc(desdeVal)}" title="Al cambiar esta fecha se activa Fecha a fecha"></label>
+      <label class="filter-field"><span>Hasta</span><input type="date" data-filter="hasta" value="${esc(hastaVal)}" title="Al cambiar esta fecha se activa Fecha a fecha"></label>
+      <label class="filter-field"><span>Familia</span><select data-filter="familia">${options(FAMILIAS_TTO, state.filters.familia, 'Todas las familias TTO')}</select></label>
+      <label class="filter-field"><span>Doctor</span><select data-filter="doctor">${doctorOptions(state.filters.doctor)}</select></label>
+      <label class="filter-field"><span>Tratamiento</span><select data-filter="tratamiento">${treatmentOptions(state.filters.tratamiento)}</select></label>
+      ${includeMaterial ? `<label class="filter-field"><span>Familia material</span><select data-filter="familiaMaterial">${options(FAMILIAS_MATERIAL, state.filters.familiaMaterial, 'Todas las familias material')}</select></label>` : ''}
+      ${includeProveedor ? `<label class="filter-field"><span>Proveedor</span><select data-filter="proveedor">${proveedorOptions(state.filters.proveedor)}</select></label>` : ''}
       <button class="btn bg2btn" id="clearPedFilters">Limpiar filtros</button>
-    </div></div>`;
+    </div><div class="sub" style="margin-top:8px">Periodo activo: ${state.filters.periodo==='mes' ? 'mes en curso' : `${esc(desdeVal)} → ${esc(hastaVal)}`}. Puedes cambiar las fechas directamente; se activará automáticamente el modo fecha a fecha.</div></div>`;
   }
 
   function renderDashboard() {
@@ -420,10 +422,34 @@
         if (id==='exportMateriales') { ev.preventDefault(); exportCSV('materiales'); return; }
       } catch(e) { toast(e.message||String(e),true); }
     });
+    document.addEventListener('input', ev => {
+      const page=document.getElementById('page-pedidos'); if (!page || !page.contains(ev.target)) return;
+      const filter=ev.target.closest('[data-filter]');
+      if (!filter) return;
+      const key = filter.dataset.filter;
+      if (key === 'desde' || key === 'hasta') {
+        state.filters[key] = filter.value;
+        state.filters.periodo = 'rango';
+      }
+    });
     document.addEventListener('change', async ev => {
       const page=document.getElementById('page-pedidos'); if (!page || !page.contains(ev.target)) return;
       const filter=ev.target.closest('[data-filter]');
-      if (filter) { state.filters[filter.dataset.filter]=filter.value; render(); return; }
+      if (filter) {
+        const key = filter.dataset.filter;
+        if (key === 'periodo') {
+          state.filters.periodo = filter.value;
+          if (filter.value === 'rango') {
+            if (!state.filters.desde) state.filters.desde = monthStart();
+            if (!state.filters.hasta) state.filters.hasta = monthEnd();
+          }
+        } else {
+          state.filters[key] = filter.value;
+          if (key === 'desde' || key === 'hasta') state.filters.periodo = 'rango';
+        }
+        render();
+        return;
+      }
       const input=ev.target.closest('[data-update]');
       if (input) { const [table,id,field]=input.dataset.update.split(':'); try { await dbUpdate(table,id,{[field]:num(input.value)}); toast('Dato actualizado.'); await loadPedidosData(); } catch(e){ toast(e.message||String(e),true); } return; }
       if (ev.target?.id === 'importTratamientos') { await importCSV(ev.target.files?.[0], 'tratamientos'); return; }
@@ -510,7 +536,7 @@
       .ped-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
       .ped-alert{margin:10px 0 14px;padding:10px 12px;border-radius:10px;font-size:13px;min-height:0}.ped-alert:empty{display:none}.ped-alert.ok{background:var(--green-light);color:#075f43}.ped-alert.bad{background:var(--red-light);color:#8e2f19}
       .ped-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:center;margin-bottom:8px}.ped-form input,.ped-form select,.ped-filters input,.ped-filters select{height:36px;border:1px solid var(--border2);border-radius:8px;padding:0 10px;font-family:'DM Sans',sans-serif;background:#fff;color:var(--text)}.ped-form .btn{height:36px}
-      .ped-filters{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:center}.mini{border:1px solid var(--border2);background:#fff;border-radius:8px;padding:5px 8px;font-family:'DM Sans',sans-serif;cursor:pointer}.mini.danger{color:var(--red)}.mini-input{width:90px;height:30px;border:1px solid var(--border2);border-radius:7px;padding:0 8px;background:#fff}.filelabel{display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:6px 10px;display:inline-flex;gap:6px;align-items:center}.mt{margin-top:16px}
+      .ped-filters{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:end}.filter-field{display:flex;flex-direction:column;gap:4px}.filter-field span{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding-left:2px}.mini{border:1px solid var(--border2);background:#fff;border-radius:8px;padding:5px 8px;font-family:'DM Sans',sans-serif;cursor:pointer}.mini.danger{color:var(--red)}.mini-input{width:90px;height:30px;border:1px solid var(--border2);border-radius:7px;padding:0 8px;background:#fff}.filelabel{display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:6px 10px;display:inline-flex;gap:6px;align-items:center}.mt{margin-top:16px}
       @media(max-width:1100px){.ped-form,.ped-filters{grid-template-columns:1fr 1fr}.ped-head{flex-direction:column}.clinical-grid{grid-template-columns:1fr 1fr!important}}
     `; document.head.appendChild(st);
   }
@@ -518,5 +544,5 @@
   window.PEDIDOS_CLINICOS_MODULE_VERSION=VERSION;
   window.bootPedidosClinicos=bootPedidosClinicos;
   document.addEventListener('DOMContentLoaded',()=>setTimeout(bootPedidosClinicos,100));
-  console.log(`MODULO PEDIDOS CLINICOS v${VERSION} cargado: produccion, familias, doctores, laboratorio separado, importacion/exportacion y comparativas`);
+  console.log(`MODULO PEDIDOS CLINICOS v${VERSION} cargado: fix selector fechas dashboard, produccion, familias y comparativas`);
 })();

@@ -1,7 +1,7 @@
-// Modulo Pedidos clinicos - v48
+// Modulo Pedidos clinicos - v49
 // Produccion clinica, catalogos, materiales, recetas, precios y pedido recomendado en modo manual sin API.
 (function () {
-  const VERSION = '2026-05-06-48';
+  const VERSION = '2026-05-06-49';
 
   const FAMILIAS_TTO = [
     'Cirugía', 'Implantes', 'Prótesis', 'Conservadora', 'Endodoncia',
@@ -307,15 +307,17 @@
     const hastaVal = state.filters.hasta || monthEnd();
     return `<div class="card mb ped-filter-card"><div class="ped-filters">
       <label class="filter-field"><span>Periodo</span><select data-filter="periodo"><option value="mes" ${state.filters.periodo==='mes'?'selected':''}>Mes en curso</option><option value="rango" ${state.filters.periodo==='rango'?'selected':''}>Fecha a fecha</option></select></label>
-      <label class="filter-field"><span>Desde</span><input type="date" data-filter="desde" value="${esc(desdeVal)}" title="Al cambiar esta fecha se activa Fecha a fecha"></label>
-      <label class="filter-field"><span>Hasta</span><input type="date" data-filter="hasta" value="${esc(hastaVal)}" title="Al cambiar esta fecha se activa Fecha a fecha"></label>
+      <label class="filter-field"><span>Desde</span><input type="date" data-filter="desde" id="pedFechaDesde" value="${esc(desdeVal)}" title="Elige fecha inicial y pulsa Aplicar rango"></label>
+      <label class="filter-field"><span>Hasta</span><input type="date" data-filter="hasta" id="pedFechaHasta" value="${esc(hastaVal)}" title="Elige fecha final y pulsa Aplicar rango"></label>
       <label class="filter-field"><span>Familia</span><select data-filter="familia">${options(FAMILIAS_TTO, state.filters.familia, 'Todas las familias TTO')}</select></label>
       <label class="filter-field"><span>Doctor</span><select data-filter="doctor">${doctorOptions(state.filters.doctor)}</select></label>
       <label class="filter-field"><span>Tratamiento</span><select data-filter="tratamiento">${treatmentOptions(state.filters.tratamiento)}</select></label>
       ${includeMaterial ? `<label class="filter-field"><span>Familia material</span><select data-filter="familiaMaterial">${options(FAMILIAS_MATERIAL, state.filters.familiaMaterial, 'Todas las familias material')}</select></label>` : ''}
       ${includeProveedor ? `<label class="filter-field"><span>Proveedor</span><select data-filter="proveedor">${proveedorOptions(state.filters.proveedor)}</select></label>` : ''}
+      <button class="btn bg2btn" id="applyPedDateRange">Aplicar rango</button>
+      <button class="btn bg2btn" id="usePedCurrentMonth">Mes en curso</button>
       <button class="btn bg2btn" id="clearPedFilters">Limpiar filtros</button>
-    </div><div class="sub" style="margin-top:8px">Periodo activo: ${state.filters.periodo==='mes' ? 'mes en curso' : `${esc(desdeVal)} → ${esc(hastaVal)}`}. Puedes cambiar las fechas directamente; se activará automáticamente el modo fecha a fecha.</div></div>`;
+    </div><div class="sub" style="margin-top:8px">Periodo activo: ${state.filters.periodo==='mes' ? `mes en curso (${esc(monthStart())} → ${esc(monthEnd())})` : `${esc(desdeVal)} → ${esc(hastaVal)}`}. Para filtrar por fechas, selecciona Desde/Hasta y pulsa <strong>Aplicar rango</strong>.</div></div>`;
   }
 
   function renderDashboard() {
@@ -411,6 +413,17 @@
       try {
         if (id==='pedRefresh') { ev.preventDefault(); await loadPedidosData(); return; }
         if (id==='clearPedFilters') { ev.preventDefault(); state.filters={periodo:'mes',desde:'',hasta:'',familia:'',doctor:'',tratamiento:'',familiaMaterial:'',proveedor:''}; render(); return; }
+        if (id==='usePedCurrentMonth') { ev.preventDefault(); state.filters.periodo='mes'; state.filters.desde=''; state.filters.hasta=''; render(); return; }
+        if (id==='applyPedDateRange') {
+          ev.preventDefault();
+          const d=q('#pedFechaDesde', page)?.value || state.filters.desde || monthStart();
+          const h=q('#pedFechaHasta', page)?.value || state.filters.hasta || monthEnd();
+          state.filters.desde = d;
+          state.filters.hasta = h;
+          state.filters.periodo = 'rango';
+          render();
+          return;
+        }
         if (id==='addProduccion') { ev.preventDefault(); await addProduccion(); return; }
         if (id==='addDoctor') { ev.preventDefault(); await addDoctor(); return; }
         if (id==='addTrat') { ev.preventDefault(); await addTratamiento(); return; }
@@ -430,6 +443,8 @@
       if (key === 'desde' || key === 'hasta') {
         state.filters[key] = filter.value;
         state.filters.periodo = 'rango';
+        const periodoSelect = q('[data-filter="periodo"]', page);
+        if (periodoSelect) periodoSelect.value = 'rango';
       }
     });
     document.addEventListener('change', async ev => {
@@ -544,5 +559,5 @@
   window.PEDIDOS_CLINICOS_MODULE_VERSION=VERSION;
   window.bootPedidosClinicos=bootPedidosClinicos;
   document.addEventListener('DOMContentLoaded',()=>setTimeout(bootPedidosClinicos,100));
-  console.log(`MODULO PEDIDOS CLINICOS v${VERSION} cargado: fix selector fechas dashboard, produccion, familias y comparativas`);
+  console.log(`MODULO PEDIDOS CLINICOS v${VERSION} cargado: selector fechas dashboard robusto con boton aplicar rango, produccion, familias y comparativas`);
 })();

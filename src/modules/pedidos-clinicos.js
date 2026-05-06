@@ -1,9 +1,8 @@
-
-// Modulo Pedidos clinicos - v44 funcional sin API
+// Modulo Pedidos clinicos - v45 funcional sin API
 // Permite trabajar manualmente con TTOs, materiales, recetas, precios y pedido recomendado
 // hasta conectar la API clinica real mediante Edge Function.
 (function () {
-  const VERSION = '2026-05-06-44';
+  const VERSION = '2026-05-06-45';
 
   const EMPRESAS = [
     ['corporacion', 'Corporación'],
@@ -522,37 +521,64 @@
     `;
   }
 
+  let delegatedEventsBound = false;
+
   function bindEvents() {
-    q('#pedRefresh')?.addEventListener('click', loadPedidosData);
-    qa('[data-ped-tab]').forEach(b => b.addEventListener('click', () => {
-      state.tab = b.dataset.pedTab;
-      render();
-    }));
-    q('#addTto')?.addEventListener('click', addTto);
-    q('#addMat')?.addEventListener('click', addMaterial);
-    q('#addTrat')?.addEventListener('click', addTratamiento);
-    q('#addRec')?.addEventListener('click', addReceta);
-    q('#addPrecio')?.addEventListener('click', addPrecio);
-    q('#genPedido')?.addEventListener('click', () => calcularPedidoRecomendado(true));
-    q('#genPedidoDash')?.addEventListener('click', () => calcularPedidoRecomendado(true));
+    // v45: eventos delegados. Antes los botones se quedaban sin listener si el contenido
+    // se re-renderizaba o si el usuario entraba al módulo después de cargar la página.
+    if (delegatedEventsBound) return;
+    delegatedEventsBound = true;
 
-    qa('[data-del]').forEach(btn => btn.addEventListener('click', async () => {
-      const [table, id] = btn.dataset.del.split(':');
-      if (!confirm('¿Eliminar este registro?')) return;
+    document.addEventListener('click', async (ev) => {
+      const page = document.getElementById('page-pedidos');
+      if (!page || !page.contains(ev.target)) return;
+
+      const tab = ev.target.closest('[data-ped-tab]');
+      if (tab) {
+        ev.preventDefault();
+        state.tab = tab.dataset.pedTab;
+        render();
+        return;
+      }
+
+      const del = ev.target.closest('[data-del]');
+      if (del) {
+        ev.preventDefault();
+        const [table, id] = del.dataset.del.split(':');
+        if (!confirm('¿Eliminar este registro?')) return;
+        try {
+          await dbDelete(table, id);
+          await loadPedidosData();
+        } catch (e) { toast(e.message || String(e), true); }
+        return;
+      }
+
+      const id = ev.target?.id;
       try {
-        await dbDelete(table, id);
-        await loadPedidosData();
-      } catch (e) { toast(e.message || String(e), true); }
-    }));
+        if (id === 'pedRefresh') { ev.preventDefault(); await loadPedidosData(); return; }
+        if (id === 'addTto') { ev.preventDefault(); await addTto(); return; }
+        if (id === 'addMat') { ev.preventDefault(); await addMaterial(); return; }
+        if (id === 'addTrat') { ev.preventDefault(); await addTratamiento(); return; }
+        if (id === 'addRec') { ev.preventDefault(); await addReceta(); return; }
+        if (id === 'addPrecio') { ev.preventDefault(); await addPrecio(); return; }
+        if (id === 'genPedido' || id === 'genPedidoDash') { ev.preventDefault(); calcularPedidoRecomendado(true); return; }
+      } catch (e) {
+        toast(e.message || String(e), true);
+      }
+    });
 
-    qa('[data-update]').forEach(input => input.addEventListener('change', async () => {
+    document.addEventListener('change', async (ev) => {
+      const page = document.getElementById('page-pedidos');
+      if (!page || !page.contains(ev.target)) return;
+      const input = ev.target.closest('[data-update]');
+      if (!input) return;
       const [table, id, field] = input.dataset.update.split(':');
       try {
         await dbUpdate(table, id, { [field]: num(input.value) });
         toast('Stock actualizado.');
         await loadPedidosData();
       } catch (e) { toast(e.message || String(e), true); }
-    }));
+    });
   }
 
   async function addTto() {
@@ -683,6 +709,5 @@
     setTimeout(bootPedidosClinicos, 100);
   });
 
-  console.log(`MODULO PEDIDOS CLINICOS v${VERSION} cargado: modo manual funcional sin API`);
+  console.log(`MODULO PEDIDOS CLINICOS v${VERSION} cargado: modo manual funcional sin API y eventos delegados`);
 })();
-

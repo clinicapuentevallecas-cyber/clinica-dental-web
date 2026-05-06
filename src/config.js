@@ -1,6 +1,6 @@
 // Configuracion compartida de la app modular
 window.APP_CONFIG = {
-  version: '2026-05-05-40',
+  version: '2026-05-05-43',
   empresas: [
     { id: 'global', nombre: 'Global', siglas: 'GLB' },
     { id: 'corporacion', nombre: 'Corporacion', siglas: 'CORP' },

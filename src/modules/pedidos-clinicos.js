@@ -1,7 +1,7 @@
-// Modulo Pedidos clinicos - v52
-// Validacion de facturas: analisis separado de Datos/Importar, lineas, stock/precios y laboratorio por historial.
+// Modulo Pedidos clinicos - v53
+// Facturas PDF con extraccion basica de texto, apertura robusta, lineas sugeridas y validacion de stock/laboratorio.
 (function () {
-  const VERSION = '2026-05-06-52';
+  const VERSION = '2026-05-12-53';
 
   const FAMILIAS_TTO = [
     'Cirugía', 'Implantes', 'Prótesis', 'Conservadora', 'Endodoncia',
@@ -501,7 +501,7 @@
       <div class="sub mt"><strong>Regla:</strong> Fungibles/Implantes/Aditamento/Biomaterial alimentan stock y precios cuando valides líneas. Laboratorio crea coste directo por historial para cruzarlo con Producción, Ingresos y Gastos.</div>
     </div>
     <div class="grid2">
-      <div class="card"><div class="ct">Líneas manuales opcionales</div><div class="sub mb">En v51 la lectura automática del PDF queda preparada para v52. Ahora puedes registrar la factura y luego validar líneas manualmente.</div><div class="ped-form"><input disabled placeholder="Se activará al abrir una factura"><select disabled><option>Material sugerido</option></select><input disabled placeholder="Cantidad"><input disabled placeholder="Precio"><button class="btn bg2btn" disabled>Añadir línea</button></div></div>
+      <div class="card"><div class="ct">Líneas manuales opcionales</div><div class="sub mb">Ahora el PDF se intenta leer automáticamente al guardar la factura. La extracción es básica: crea líneas sugeridas desde el texto del PDF y tú solo validas/corriges material, cantidad, precio y stock antes de validar.</div><div class="sub">Si el proveedor usa un PDF escaneado como imagen, la lectura automática puede no detectar líneas y tendrás que añadirlas manualmente al abrir la factura.</div></div>
       <div class="card"><div class="ct">Cruce de laboratorio</div><div class="tw"><table><thead><tr><th>Historial</th><th>Producción encontrada</th><th>Coste lab.</th><th>Estado</th></tr></thead><tbody>${state.laboratorioCostes.slice(0,8).map(l=>{ const match = state.produccion.find(p=>norm(p.numero_historial)===norm(l.numero_historial)); return `<tr><td>${esc(l.numero_historial||'')}</td><td>${match?esc(match.tratamiento||'Producción encontrada'):'—'}</td><td>${eur(l.total||l.importe_total||l.importe_base)}</td><td class="${match?'up':'dn'}">${match?'Cruzado':'Pendiente'}</td></tr>`; }).join('') || tableEmpty(4,'Sin costes de laboratorio importados.')}</tbody></table></div></div>
     </div>`;
   }
@@ -538,7 +538,7 @@
     const selected = facturaById(state.selectedFacturaId) || state.facturas[0] || null;
     if (selected && !state.selectedFacturaId) state.selectedFacturaId = selected.id;
     return `<div class="grid2">
-      <div class="card"><div class="ct">Facturas importadas</div><div class="sub mb">Abre una factura para revisar líneas, validar, marcar incidencia o descartar. Hasta validar, no cambia stock ni márgenes.</div><div class="tw"><table><thead><tr><th>Fecha</th><th>Familia</th><th>Proveedor</th><th>Nº factura</th><th>Historial</th><th>Total</th><th>Estado</th><th></th></tr></thead><tbody>${state.facturas.map(f=>`<tr class="${String(f.id)===String(state.selectedFacturaId)?'selected-row':''}"><td>${esc(dateStr(f.fecha_factura))}</td><td>${esc(f.familia_factura||f.familia||'')}</td><td>${esc(f.proveedor||'')}</td><td>${esc(f.numero_factura||'')}</td><td>${esc(f.numero_historial||'')}</td><td>${eur(f.total)}</td><td class="${estadoFacturaClass(f)}">${esc(estadoFacturaLabel(f))}</td><td><button class="mini" data-open-factura="${esc(f.id)}">Abrir</button></td></tr>`).join('') || tableEmpty(8,'No hay facturas importadas.')}</tbody></table></div></div>
+      <div class="card"><div class="ct">Facturas importadas</div><div class="sub mb">Abre una factura para revisar líneas, validar, marcar incidencia o descartar. Hasta validar, no cambia stock ni márgenes.</div><div class="tw"><table><thead><tr><th>Fecha</th><th>Familia</th><th>Proveedor</th><th>Nº factura</th><th>Historial</th><th>Total</th><th>Estado</th><th></th></tr></thead><tbody>${state.facturas.map(f=>`<tr data-open-factura="${esc(f.id)}" class="${String(f.id)===String(state.selectedFacturaId)?'selected-row':''}"><td>${esc(dateStr(f.fecha_factura))}</td><td>${esc(f.familia_factura||f.familia||'')}</td><td>${esc(f.proveedor||'')}</td><td>${esc(f.numero_factura||'')}</td><td>${esc(f.numero_historial||'')}</td><td>${eur(f.total)}</td><td class="${estadoFacturaClass(f)}">${esc(estadoFacturaLabel(f))}</td><td><button class="mini" data-open-factura="${esc(f.id)}">Abrir</button></td></tr>`).join('') || tableEmpty(8,'No hay facturas importadas.')}</tbody></table></div></div>
       ${selected ? renderFacturaDetalle(selected) : `<div class="card"><div class="ct">Detalle de factura</div><div class="sub">Selecciona una factura para validarla.</div></div>`}
     </div>`;
   }
@@ -557,7 +557,7 @@
         ${lab ? `<span class="chip">Cruce: <strong class="${prodMatch?'up':'dn'}">${prodMatch?'Producción encontrada':'Pendiente'}</strong></span>` : ''}
       </div>
       ${lab ? `<div class="sub mb">En laboratorio no se suma stock. Al validar se crea/actualiza coste directo y se cruza por número de historial.</div>` : `<div class="sub mb">En materiales, cada línea validada suma stock y actualiza precio del proveedor.</div>`}
-      <div class="tw mb"><table><thead><tr><th>Descripción</th><th>Material</th><th>Referencia</th><th>Cant.</th><th>Precio</th><th>IVA</th><th>Total</th><th>Stock +</th><th></th></tr></thead><tbody>${lineas.map(l=>{ const m=materialById(l.material_id); return `<tr><td>${esc(l.descripcion||'')}</td><td>${esc(m?.nombre||'—')}</td><td>${esc(l.referencia_proveedor||'')}</td><td>${num(l.cantidad)}</td><td>${eur(l.precio_unitario)}</td><td>${eur(l.iva)}</td><td>${eur(l.total)}</td><td>${num(l.stock_suma)}</td><td>${(f.estado==='validada'||f.estado==='descartada')?'':`<button class="mini danger" data-del="factura_lineas_clinicas:${esc(l.id)}">Eliminar</button>`}</td></tr>`; }).join('') || tableEmpty(9, lab ? 'Laboratorio puede validarse sin líneas si has informado total e historial.' : 'Añade líneas antes de validar stock y precios.')}</tbody></table></div>
+      <div class="tw mb"><table><thead><tr><th>Descripción</th><th>Material</th><th>Referencia</th><th>Cant.</th><th>Precio</th><th>IVA</th><th>Total</th><th>Stock +</th><th></th></tr></thead><tbody>${lineas.map(l=>{ const m=materialById(l.material_id); return `<tr><td>${esc(l.descripcion||'')}</td><td>${m?esc(m.nombre||''):(f.estado==='validada'||f.estado==='descartada'?'—':`<select class="mini-select" id="lineMat-${esc(l.id)}">${options(state.materiales.map(mm=>({value:mm.id,label:`${mm.nombre} · ${getMaterialFamily(mm)}`})), '', 'Asignar material')}</select>`)}</td><td>${esc(l.referencia_proveedor||'')}</td><td>${num(l.cantidad)}</td><td>${eur(l.precio_unitario)}</td><td>${eur(l.iva)}</td><td>${eur(l.total)}</td><td>${num(l.stock_suma)}</td><td>${(f.estado==='validada'||f.estado==='descartada')?'':`${m?'':`<button class="mini" data-map-linea="${esc(l.id)}">Guardar material</button>`}<button class="mini danger" data-del="factura_lineas_clinicas:${esc(l.id)}">Eliminar</button>`}</td></tr>`; }).join('') || tableEmpty(9, lab ? 'Laboratorio puede validarse sin líneas si has informado total e historial.' : 'Añade líneas antes de validar stock y precios.')}</tbody></table></div>
       ${(f.estado==='validada'||f.estado==='descartada') ? '' : `<div class="ped-form wide mb">
         <input id="facLineaDesc" placeholder="Descripción línea">
         <select id="facLineaMat"><option value="">Material asociado</option>${materialOptions('', '')}</select>
@@ -603,7 +603,9 @@
       if (ev.target.id === 'expMat') { exportCSV('materiales'); return; }
       if (ev.target.id === 'recargarFacturas') { await loadPedidosData(); return; }
       const openF = ev.target.closest('[data-open-factura]');
-      if (openF) { state.selectedFacturaId = openF.dataset.openFactura; render(); return; }
+      if (openF) { state.selectedFacturaId = openF.dataset.openFactura; state.importSection = 'facturas'; render(); return; }
+      const mapLinea = ev.target.closest('[data-map-linea]');
+      if (mapLinea) { try { await asignarMaterialLinea(mapLinea.dataset.mapLinea); } catch(e){ toast(e.message||String(e),true); } return; }
       const addLinea = ev.target.closest('[data-add-linea-factura]');
       if (addLinea) { try { await addFacturaLinea(addLinea.dataset.addLineaFactura); } catch(e){ toast(e.message||String(e),true); } return; }
       const validar = ev.target.closest('[data-validar-factura]');
@@ -687,12 +689,158 @@
     if (!payload.material_id) throw new Error('Selecciona material.'); if (!payload.proveedor) throw new Error('Indica proveedor.'); if (!payload.precio) throw new Error('Indica precio.');
     await dbInsert('material_precios', payload); await loadPedidosData(); toast('Precio guardado.');
   }
+  
+  let pdfJsLoadingPromise = null;
+  async function ensurePdfJs() {
+    if (window.pdfjsLib) return window.pdfjsLib;
+    if (!pdfJsLoadingPromise) {
+      pdfJsLoadingPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        script.onload = () => {
+          try {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            resolve(window.pdfjsLib);
+          } catch (e) { reject(e); }
+        };
+        script.onerror = () => reject(new Error('No se pudo cargar el lector PDF.'));
+        document.head.appendChild(script);
+      });
+    }
+    return pdfJsLoadingPromise;
+  }
+  async function extractPdfText(file) {
+    if (!file) return '';
+    try {
+      const pdfjsLib = await ensurePdfJs();
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      const pages = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const items = content.items || [];
+        pages.push(items.map(it => it.str || '').join(' '));
+      }
+      return pages.join('\n').replace(/\s+/g, ' ').trim();
+    } catch (e) {
+      console.warn('Extraccion PDF no disponible:', e.message || e);
+      return '';
+    }
+  }
+  function inferInvoiceMetadata(text) {
+    const out = {};
+    if (!text) return out;
+    const t = String(text);
+    const inv = t.match(/(?:factura|fra\.?|n[ºo]\.?\s*factura|invoice)\s*[:#-]?\s*([A-Z0-9\/-]{3,})/i);
+    if (inv) out.numero_factura = inv[1];
+    const hist = t.match(/(?:historial|hist\.?|n[ºo]\.?\s*historial|paciente\s*n[ºo]?)\s*[:#-]?\s*([A-Z0-9\/-]{3,})/i);
+    if (hist) out.numero_historial = hist[1];
+    const date = t.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](20\d{2})\b/);
+    if (date) out.fecha_factura = `${date[3]}-${date[2].padStart(2,'0')}-${date[1].padStart(2,'0')}`;
+    const totals = [...t.matchAll(/(?:total|importe\s*total|total\s*factura)\s*[: ]*([0-9\.]+,[0-9]{2}|[0-9]+\.[0-9]{2})/ig)].map(m => parseMoney(m[1])).filter(n => n>0);
+    if (totals.length) out.total = totals[totals.length-1];
+    const iva = t.match(/(?:iva|i\.v\.a\.)\s*[: ]*([0-9\.]+,[0-9]{2}|[0-9]+\.[0-9]{2})/i);
+    if (iva) out.iva = parseMoney(iva[1]);
+    if (out.total && out.iva) out.importe_base = Math.max(0, out.total - out.iva);
+    return out;
+  }
+  function parseMoney(v) {
+    const s = String(v||'').trim();
+    if (!s) return 0;
+    if (s.includes(',') && s.includes('.')) return Number(s.replace(/\./g,'').replace(',','.')) || 0;
+    if (s.includes(',')) return Number(s.replace(',','.')) || 0;
+    return Number(s) || 0;
+  }
+  function findMaterialByText(text, family) {
+    const n = norm(text);
+    const fam = norm(family||'');
+    let candidates = state.materiales.filter(m => !fam || norm(getMaterialFamily(m)) === fam || fam === 'fungibles' || fam === 'implantes' || fam === 'aditamento' || fam === 'biomaterial');
+    let best = null, score = 0;
+    for (const m of candidates) {
+      const name = norm(m.nombre || '');
+      if (!name) continue;
+      let s = 0;
+      if (n.includes(name)) s += 10;
+      for (const part of name.split(' ').filter(x=>x.length>3)) if (n.includes(part)) s += 1;
+      if (s > score) { score = s; best = m; }
+    }
+    return score >= 2 ? best : null;
+  }
+  function extractCandidateLines(text, familia) {
+    if (!text) return [];
+    const normalized = text.replace(/\s{2,}/g,' ');
+    const chunks = normalized.split(/(?=(?:\d{1,3}\s+)?[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ0-9\-\/ ]{8,})/).map(x=>x.trim()).filter(Boolean);
+    const lines = [];
+    const moneyRe = /([0-9\.]+,[0-9]{2}|[0-9]+\.[0-9]{2})/g;
+    for (const c of chunks) {
+      const amounts = [...c.matchAll(moneyRe)].map(m=>parseMoney(m[1])).filter(n=>n>0);
+      if (!amounts.length) continue;
+      const desc = c.replace(moneyRe,' ').replace(/\b(total|iva|base imponible|subtotal)\b/ig,' ').replace(/\s+/g,' ').trim();
+      if (desc.length < 5) continue;
+      const total = amounts[amounts.length-1];
+      const qtyMatch = c.match(/(?:^|\s)(\d{1,4})(?:[,.]\d+)?\s*(?:ud|uds|u|unid|unidad|caja|pack)?\b/i);
+      const cantidad = qtyMatch ? Math.max(1, Number(qtyMatch[1]) || 1) : 1;
+      const mat = findMaterialByText(desc, familia);
+      lines.push({ descripcion: desc.slice(0,220), cantidad, precio_unitario: cantidad ? total/cantidad : total, total, material_id: mat?.id || null, referencia_proveedor: '' });
+      if (lines.length >= 20) break;
+    }
+    // fallback: if chunks failed, take lines around monetary amounts
+    if (!lines.length) {
+      const parts = text.split(/\n| {3,}/).map(x=>x.trim()).filter(Boolean);
+      for (const part of parts) {
+        const amounts = [...part.matchAll(moneyRe)].map(m=>parseMoney(m[1])).filter(n=>n>0);
+        if (amounts.length && part.length > 8) {
+          const total = amounts[amounts.length-1]; const mat=findMaterialByText(part,familia);
+          lines.push({ descripcion: part.replace(moneyRe,'').trim().slice(0,220), cantidad:1, precio_unitario:total, total, material_id:mat?.id||null, referencia_proveedor:'' });
+        }
+        if (lines.length >= 20) break;
+      }
+    }
+    return lines;
+  }
+  async function crearLineasSugeridasDesdePDF(facturaId, factura, pdfText) {
+    if (!pdfText || esLaboratorio(factura)) return 0;
+    const candidates = extractCandidateLines(pdfText, factura.familia_factura || factura.familia);
+    let count = 0;
+    for (const c of candidates) {
+      await dbInsert('factura_lineas_clinicas', {
+        factura_id: facturaId,
+        material_id: c.material_id,
+        descripcion: c.descripcion,
+        referencia_proveedor: c.referencia_proveedor || '',
+        cantidad: c.cantidad || 1,
+        unidad: c.material_id ? (materialById(c.material_id)?.unidad || 'unidad') : 'unidad',
+        precio_unitario: c.precio_unitario || c.total || 0,
+        iva: 0,
+        total: c.total || c.precio_unitario || 0,
+        stock_suma: c.cantidad || 1,
+        familia_material: c.material_id ? getMaterialFamily(materialById(c.material_id)) : (factura.familia_factura || ''),
+        estado: 'pendiente_validacion',
+        observaciones: c.material_id ? 'Linea sugerida desde PDF con material sugerido.' : 'Linea sugerida desde PDF. Asigna material antes de validar.'
+      });
+      count++;
+    }
+    return count;
+  }
+
+  async function asignarMaterialLinea(lineaId) {
+    const sel = q(`#lineMat-${CSS.escape(lineaId)}`);
+    const matId = sel?.value;
+    if (!matId) throw new Error('Selecciona material para la línea.');
+    const mat = materialById(matId);
+    await dbUpdate('factura_lineas_clinicas', lineaId, { material_id: matId, unidad: mat?.unidad || 'unidad', familia_material: getMaterialFamily(mat) });
+    await loadPedidosData(); render(); toast('Material asignado a la línea.');
+  }
+
   async function guardarFacturaPdf() {
     const familia = q('#factFamilia').value;
     const proveedor = q('#factProveedor').value.trim();
     if (!familia) throw new Error('Selecciona familia de factura.');
     if (!proveedor) throw new Error('Indica proveedor.');
     const file = q('#factPdf').files?.[0];
+    const pdfText = file ? await extractPdfText(file) : '';
+    const inferred = inferInvoiceMetadata(pdfText);
     let archivo_pdf_url = '';
     if (file) {
       try {
@@ -706,21 +854,25 @@
     const payload = {
       familia_factura: familia,
       proveedor,
-      fecha_factura: q('#factFecha').value || today(),
-      numero_factura: q('#factNumero').value.trim(),
-      numero_historial: q('#factHistorial').value.trim(),
+      fecha_factura: q('#factFecha').value || inferred.fecha_factura || today(),
+      numero_factura: q('#factNumero').value.trim() || inferred.numero_factura || '',
+      numero_historial: q('#factHistorial').value.trim() || inferred.numero_historial || '',
       paciente_referencia: q('#factPaciente').value.trim(),
       tratamiento_texto: q('#factConcepto').value.trim(),
-      importe_base: num(q('#factBase').value),
-      iva: num(q('#factIva').value),
-      total: num(q('#factTotal').value) || (num(q('#factBase').value) + num(q('#factIva').value)),
+      importe_base: num(q('#factBase').value) || inferred.importe_base || 0,
+      iva: num(q('#factIva').value) || inferred.iva || 0,
+      total: num(q('#factTotal').value) || inferred.total || (num(q('#factBase').value) + num(q('#factIva').value)),
       archivo_pdf_url,
       archivo_nombre: file?.name || '',
       estado: 'pendiente_validacion',
       tipo_impacto: familia === 'Laboratorio' ? 'laboratorio_historial' : 'stock_precio',
-      observaciones: q('#factObs').value.trim()
+      observaciones: [q('#factObs').value.trim(), pdfText ? `Texto PDF extraido automaticamente (${pdfText.length} caracteres).` : 'PDF sin texto extraible o no adjunto.'].filter(Boolean).join(' | ')
     };
     const factura = await dbInsert('facturas_clinicas', payload);
+    let suggestedLines = 0;
+    if (factura?.id && familia !== 'Laboratorio' && pdfText) {
+      suggestedLines = await crearLineasSugeridasDesdePDF(factura.id, payload, pdfText);
+    }
     if (familia === 'Laboratorio') {
       const prod = state.produccion.find(p => norm(p.numero_historial) && norm(p.numero_historial) === norm(payload.numero_historial));
       await dbInsert('laboratorio_costes', {
@@ -739,7 +891,10 @@
         observaciones: payload.observaciones
       });
     }
-    await loadPedidosData(); toast(familia === 'Laboratorio' ? 'Factura de laboratorio guardada y coste creado para cruce por historial.' : 'Factura guardada pendiente de validar líneas y stock.');
+    await loadPedidosData();
+    if (factura?.id) { state.selectedFacturaId = factura.id; state.importSection = 'facturas'; }
+    render();
+    toast(familia === 'Laboratorio' ? 'Factura de laboratorio guardada y coste creado para cruce por historial.' : (suggestedLines ? `Factura guardada. Se han creado ${suggestedLines} línea(s) sugerida(s) desde el PDF.` : 'Factura guardada. No se detectaron líneas; añádelas manualmente antes de validar.'));
   }
 
   async function addFacturaLinea(facturaId) {
@@ -876,7 +1031,7 @@
       .ped-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
       .ped-alert{margin:10px 0 14px;padding:10px 12px;border-radius:10px;font-size:13px;min-height:0}.ped-alert:empty{display:none}.ped-alert.ok{background:var(--green-light);color:#075f43}.ped-alert.bad{background:var(--red-light);color:#8e2f19}
       .ped-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:center;margin-bottom:8px}.ped-form.wide{grid-template-columns:repeat(4,minmax(150px,1fr))}.ped-form input,.ped-form select,.ped-filters input,.ped-filters select{height:36px;border:1px solid var(--border2);border-radius:8px;padding:0 10px;font-family:'DM Sans',sans-serif;background:#fff;color:var(--text)}.ped-form .btn{height:36px}
-      .ped-filters{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:end}.filter-field{display:flex;flex-direction:column;gap:4px}.filter-field span{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding-left:2px}.mini{border:1px solid var(--border2);background:#fff;border-radius:8px;padding:5px 8px;font-family:'DM Sans',sans-serif;cursor:pointer}.mini.danger{color:var(--red)}.btn.danger{background:var(--red);color:#fff}.selected-row{background:#f3f8ff}.factura-detail .chip strong{margin-left:4px}.mini-input{width:90px;height:30px;border:1px solid var(--border2);border-radius:7px;padding:0 8px;background:#fff}.filelabel{display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:6px 10px;display:inline-flex;gap:6px;align-items:center}.mt{margin-top:16px}.sub-tabs{margin-top:-4px;margin-bottom:14px}.clinical-tab.small{font-size:12px;padding:7px 10px}
+      .ped-filters{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:end}.filter-field{display:flex;flex-direction:column;gap:4px}.filter-field span{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding-left:2px}.mini{border:1px solid var(--border2);background:#fff;border-radius:8px;padding:5px 8px;font-family:'DM Sans',sans-serif;cursor:pointer}.mini.danger{color:var(--red)}.btn.danger{background:var(--red);color:#fff}.selected-row{background:#f3f8ff}.tw tr[data-open-factura]{cursor:pointer}.mini-select{height:32px;border:1px solid var(--border2);border-radius:8px;padding:0 8px;background:#fff;max-width:220px}.factura-detail .chip strong{margin-left:4px}.mini-input{width:90px;height:30px;border:1px solid var(--border2);border-radius:7px;padding:0 8px;background:#fff}.filelabel{display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:6px 10px;display:inline-flex;gap:6px;align-items:center}.mt{margin-top:16px}.sub-tabs{margin-top:-4px;margin-bottom:14px}.clinical-tab.small{font-size:12px;padding:7px 10px}
       @media(max-width:1100px){.ped-form,.ped-form.wide,.ped-filters{grid-template-columns:1fr 1fr}.ped-head{flex-direction:column}.clinical-grid{grid-template-columns:1fr 1fr!important}}
     `; document.head.appendChild(st);
   }
@@ -888,5 +1043,5 @@
   window.PEDIDOS_CLINICOS_MODULE_VERSION = VERSION;
   window.bootPedidosClinicos = bootPedidosClinicos;
   document.addEventListener('DOMContentLoaded',()=>setTimeout(bootPedidosClinicos,100));
-  console.log(`MODULO PEDIDOS CLINICOS v${VERSION} cargado: validacion de facturas, lineas, stock/precios y laboratorio por historial`);
+  console.log(`MODULO PEDIDOS CLINICOS v${VERSION} cargado: apertura robusta de facturas, extraccion basica PDF, lineas sugeridas y validacion`);
 })();

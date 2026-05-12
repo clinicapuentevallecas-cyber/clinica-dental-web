@@ -1,7 +1,7 @@
-// Modulo Pedidos clinicos - v51
-// Reorganizacion: pestanas de analisis sin insercion, Datos centraliza CRUD, Importar centraliza CSV/PDF.
+// Modulo Pedidos clinicos - v52
+// Validacion de facturas: analisis separado de Datos/Importar, lineas, stock/precios y laboratorio por historial.
 (function () {
-  const VERSION = '2026-05-06-51';
+  const VERSION = '2026-05-06-52';
 
   const FAMILIAS_TTO = [
     'Cirugía', 'Implantes', 'Prótesis', 'Conservadora', 'Endodoncia',
@@ -20,6 +20,7 @@
     tratamientos: [], materiales: [], recetas: [], produccion: [], precios: [], pedidos: [], doctores: [],
     facturas: [], facturaLineas: [], laboratorioCostes: [],
     filters: { periodo: 'mes', desde: '', hasta: '', familia: '', doctor: '', tratamiento: '', familiaMaterial: '', proveedor: '', historial: '' },
+    selectedFacturaId: '',
     loading: false,
     error: ''
   };
@@ -512,8 +513,68 @@
       <div class="card"><div class="ct">Exportar plantillas</div><div class="sub mb">Descarga estructura actual para usar como plantilla.</div><div class="ped-form"><button class="btn bg2btn" id="expTrat">Exportar tratamientos</button><button class="btn bg2btn" id="expMat">Exportar materiales</button></div></div>
     </div>`;
   }
+  function estadoFacturaLabel(f) {
+    const e = f?.estado || 'pendiente_validacion';
+    const map = {
+      pendiente_validacion: 'Pendiente de validar',
+      validada: 'Validada',
+      pendiente_cruce: 'Pendiente de cruce',
+      incidencia: 'Con incidencia',
+      descartada: 'Descartada'
+    };
+    return map[e] || e;
+  }
+  function estadoFacturaClass(f) {
+    const e = f?.estado || '';
+    if (e === 'validada') return 'up';
+    if (e === 'incidencia' || e === 'descartada' || e === 'pendiente_cruce') return 'dn';
+    return '';
+  }
+  function facturaById(id) { return state.facturas.find(f => String(f.id) === String(id)); }
+  function lineasByFactura(id) { return state.facturaLineas.filter(l => String(l.factura_id) === String(id)); }
+  function esLaboratorio(f) { return norm(f?.familia_factura || f?.familia) === 'laboratorio'; }
+
   function renderFacturasImportadas() {
-    return `<div class="card"><div class="ct">Facturas importadas</div><div class="tw"><table><thead><tr><th>Fecha</th><th>Familia</th><th>Proveedor</th><th>Nº factura</th><th>Historial</th><th>Concepto</th><th>Total</th><th>Estado</th><th>Impacto</th></tr></thead><tbody>${state.facturas.map(f=>`<tr><td>${esc(dateStr(f.fecha_factura))}</td><td>${esc(f.familia_factura||f.familia||'')}</td><td>${esc(f.proveedor||'')}</td><td>${esc(f.numero_factura||'')}</td><td>${esc(f.numero_historial||'')}</td><td>${esc(f.tratamiento_texto||f.concepto||'')}</td><td>${eur(f.total)}</td><td>${esc(f.estado||'pendiente')}</td><td>${esc(f.tipo_impacto||'')}</td></tr>`).join('') || tableEmpty(9,'No hay facturas importadas.')}</tbody></table></div></div>`;
+    const selected = facturaById(state.selectedFacturaId) || state.facturas[0] || null;
+    if (selected && !state.selectedFacturaId) state.selectedFacturaId = selected.id;
+    return `<div class="grid2">
+      <div class="card"><div class="ct">Facturas importadas</div><div class="sub mb">Abre una factura para revisar líneas, validar, marcar incidencia o descartar. Hasta validar, no cambia stock ni márgenes.</div><div class="tw"><table><thead><tr><th>Fecha</th><th>Familia</th><th>Proveedor</th><th>Nº factura</th><th>Historial</th><th>Total</th><th>Estado</th><th></th></tr></thead><tbody>${state.facturas.map(f=>`<tr class="${String(f.id)===String(state.selectedFacturaId)?'selected-row':''}"><td>${esc(dateStr(f.fecha_factura))}</td><td>${esc(f.familia_factura||f.familia||'')}</td><td>${esc(f.proveedor||'')}</td><td>${esc(f.numero_factura||'')}</td><td>${esc(f.numero_historial||'')}</td><td>${eur(f.total)}</td><td class="${estadoFacturaClass(f)}">${esc(estadoFacturaLabel(f))}</td><td><button class="mini" data-open-factura="${esc(f.id)}">Abrir</button></td></tr>`).join('') || tableEmpty(8,'No hay facturas importadas.')}</tbody></table></div></div>
+      ${selected ? renderFacturaDetalle(selected) : `<div class="card"><div class="ct">Detalle de factura</div><div class="sub">Selecciona una factura para validarla.</div></div>`}
+    </div>`;
+  }
+
+  function renderFacturaDetalle(f) {
+    const lineas = lineasByFactura(f.id);
+    const lab = esLaboratorio(f);
+    const prodMatch = f.numero_historial ? state.produccion.find(p => norm(p.numero_historial) === norm(f.numero_historial)) : null;
+    const lineTotal = lineas.reduce((s,l)=>s+num(l.total || (num(l.cantidad)*num(l.precio_unitario)+num(l.iva))),0);
+    return `<div class="card factura-detail"><div class="ct">Detalle y validación</div>
+      <div class="sub mb"><strong>${esc(f.proveedor||'Proveedor')}</strong> · ${esc(f.numero_factura||'Sin nº')} · ${esc(f.familia_factura||'')} · ${eur(f.total)}</div>
+      <div class="chips mb">
+        <span class="chip">Estado: <strong class="${estadoFacturaClass(f)}">${esc(estadoFacturaLabel(f))}</strong></span>
+        <span class="chip">Impacto: <strong>${lab ? 'Coste laboratorio por historial' : 'Stock y precios'}</strong></span>
+        ${lab ? `<span class="chip">Historial: <strong>${esc(f.numero_historial||'Sin historial')}</strong></span>` : ''}
+        ${lab ? `<span class="chip">Cruce: <strong class="${prodMatch?'up':'dn'}">${prodMatch?'Producción encontrada':'Pendiente'}</strong></span>` : ''}
+      </div>
+      ${lab ? `<div class="sub mb">En laboratorio no se suma stock. Al validar se crea/actualiza coste directo y se cruza por número de historial.</div>` : `<div class="sub mb">En materiales, cada línea validada suma stock y actualiza precio del proveedor.</div>`}
+      <div class="tw mb"><table><thead><tr><th>Descripción</th><th>Material</th><th>Referencia</th><th>Cant.</th><th>Precio</th><th>IVA</th><th>Total</th><th>Stock +</th><th></th></tr></thead><tbody>${lineas.map(l=>{ const m=materialById(l.material_id); return `<tr><td>${esc(l.descripcion||'')}</td><td>${esc(m?.nombre||'—')}</td><td>${esc(l.referencia_proveedor||'')}</td><td>${num(l.cantidad)}</td><td>${eur(l.precio_unitario)}</td><td>${eur(l.iva)}</td><td>${eur(l.total)}</td><td>${num(l.stock_suma)}</td><td>${(f.estado==='validada'||f.estado==='descartada')?'':`<button class="mini danger" data-del="factura_lineas_clinicas:${esc(l.id)}">Eliminar</button>`}</td></tr>`; }).join('') || tableEmpty(9, lab ? 'Laboratorio puede validarse sin líneas si has informado total e historial.' : 'Añade líneas antes de validar stock y precios.')}</tbody></table></div>
+      ${(f.estado==='validada'||f.estado==='descartada') ? '' : `<div class="ped-form wide mb">
+        <input id="facLineaDesc" placeholder="Descripción línea">
+        <select id="facLineaMat"><option value="">Material asociado</option>${materialOptions('', '')}</select>
+        <input id="facLineaRef" placeholder="Referencia proveedor">
+        <input id="facLineaCant" inputmode="decimal" placeholder="Cantidad">
+        <input id="facLineaPrecio" inputmode="decimal" placeholder="Precio unitario">
+        <input id="facLineaIva" inputmode="decimal" placeholder="IVA línea">
+        <input id="facLineaTotal" inputmode="decimal" placeholder="Total línea">
+        <input id="facLineaStock" inputmode="decimal" placeholder="Stock que suma">
+        <button class="btn bg2btn" data-add-linea-factura="${esc(f.id)}">Añadir línea</button>
+      </div>`}
+      <div class="sub mb">Suma líneas: ${eur(lineTotal)} · Total factura: ${eur(f.total)}</div>
+      <div class="ped-form">
+        ${(f.estado==='validada'||f.estado==='descartada') ? '' : `<button class="btn" data-validar-factura="${esc(f.id)}">Validar factura</button><button class="btn bg2btn" data-incidencia-factura="${esc(f.id)}">Marcar incidencia</button><button class="btn danger" data-descartar-factura="${esc(f.id)}">Descartar</button>`}
+        <button class="btn bg2btn" id="recargarFacturas">Recargar</button>
+      </div>
+    </div>`;
   }
 
   function bindEvents() {
@@ -540,6 +601,17 @@
       if (ev.target.id === 'guardarFacturaPdf') { try { await guardarFacturaPdf(); } catch(e){ toast(e.message||String(e),true); } return; }
       if (ev.target.id === 'expTrat') { exportCSV('tratamientos'); return; }
       if (ev.target.id === 'expMat') { exportCSV('materiales'); return; }
+      if (ev.target.id === 'recargarFacturas') { await loadPedidosData(); return; }
+      const openF = ev.target.closest('[data-open-factura]');
+      if (openF) { state.selectedFacturaId = openF.dataset.openFactura; render(); return; }
+      const addLinea = ev.target.closest('[data-add-linea-factura]');
+      if (addLinea) { try { await addFacturaLinea(addLinea.dataset.addLineaFactura); } catch(e){ toast(e.message||String(e),true); } return; }
+      const validar = ev.target.closest('[data-validar-factura]');
+      if (validar) { try { await validarFactura(validar.dataset.validarFactura); } catch(e){ toast(e.message||String(e),true); } return; }
+      const incidencia = ev.target.closest('[data-incidencia-factura]');
+      if (incidencia) { try { await cambiarEstadoFactura(incidencia.dataset.incidenciaFactura, 'incidencia'); } catch(e){ toast(e.message||String(e),true); } return; }
+      const descartar = ev.target.closest('[data-descartar-factura]');
+      if (descartar) { if (confirm('¿Descartar factura? No afectará stock ni márgenes.')) { try { await cambiarEstadoFactura(descartar.dataset.descartarFactura, 'descartada'); } catch(e){ toast(e.message||String(e),true); } } return; }
       const del = ev.target.closest('[data-del]');
       if (del) { const [table,id] = del.dataset.del.split(':'); if (confirm('¿Eliminar registro?')) { try { await dbDelete(table,id); await loadPedidosData(); toast('Registro eliminado.'); } catch(e){ toast(e.message||String(e),true); } } return; }
       const stock = ev.target.closest('[data-stock-save]');
@@ -670,6 +742,108 @@
     await loadPedidosData(); toast(familia === 'Laboratorio' ? 'Factura de laboratorio guardada y coste creado para cruce por historial.' : 'Factura guardada pendiente de validar líneas y stock.');
   }
 
+  async function addFacturaLinea(facturaId) {
+    const f = facturaById(facturaId);
+    if (!f) throw new Error('Factura no encontrada.');
+    if (f.estado === 'validada' || f.estado === 'descartada') throw new Error('No se puede editar una factura validada o descartada.');
+    const matId = q('#facLineaMat')?.value || null;
+    const mat = matId ? materialById(matId) : null;
+    const cantidad = num(q('#facLineaCant')?.value);
+    const precio = num(q('#facLineaPrecio')?.value);
+    const iva = num(q('#facLineaIva')?.value);
+    const total = num(q('#facLineaTotal')?.value) || (cantidad * precio + iva);
+    const stockSuma = num(q('#facLineaStock')?.value) || cantidad;
+    const payload = {
+      factura_id: facturaId,
+      material_id: matId,
+      descripcion: q('#facLineaDesc')?.value.trim() || mat?.nombre || '',
+      referencia_proveedor: q('#facLineaRef')?.value.trim() || mat?.referencia_proveedor || '',
+      cantidad,
+      unidad: mat?.unidad || 'unidad',
+      precio_unitario: precio,
+      iva,
+      total,
+      stock_suma: esLaboratorio(f) ? 0 : stockSuma,
+      familia_material: mat ? getMaterialFamily(mat) : (f.familia_factura || ''),
+      estado: 'pendiente_validacion'
+    };
+    if (!payload.descripcion) throw new Error('Indica descripción o material.');
+    if (!esLaboratorio(f) && !payload.material_id) throw new Error('Selecciona material para actualizar stock/precio.');
+    if (!esLaboratorio(f) && !cantidad) throw new Error('Indica cantidad.');
+    await dbInsert('factura_lineas_clinicas', payload);
+    await loadPedidosData(); state.selectedFacturaId = facturaId; render(); toast('Línea añadida.');
+  }
+
+  async function cambiarEstadoFactura(facturaId, estado) {
+    await dbUpdate('facturas_clinicas', facturaId, { estado });
+    await loadPedidosData(); state.selectedFacturaId = facturaId; render(); toast(estado === 'incidencia' ? 'Factura marcada con incidencia.' : 'Factura descartada.');
+  }
+
+  async function validarFactura(facturaId) {
+    const f = facturaById(facturaId);
+    if (!f) throw new Error('Factura no encontrada.');
+    if (f.estado === 'validada') throw new Error('Factura ya validada.');
+    if (f.estado === 'descartada') throw new Error('No se puede validar una factura descartada.');
+    if (esLaboratorio(f)) return validarFacturaLaboratorio(f);
+    return validarFacturaMateriales(f);
+  }
+
+  async function validarFacturaMateriales(f) {
+    const lineas = lineasByFactura(f.id);
+    if (!lineas.length) throw new Error('Añade al menos una línea con material antes de validar.');
+    for (const l of lineas) {
+      if (!l.material_id) throw new Error('Todas las líneas deben estar vinculadas a un material.');
+      const mat = materialById(l.material_id);
+      const stockNuevo = num(mat?.stock_actual) + num(l.stock_suma || l.cantidad);
+      const precioUnitario = num(l.precio_unitario);
+      await dbUpdate('materiales_catalogo', l.material_id, {
+        stock_actual: stockNuevo,
+        coste_ultimo: precioUnitario || num(mat?.coste_ultimo),
+        coste_medio: precioUnitario || num(mat?.coste_medio),
+        proveedor_preferente: f.proveedor || mat?.proveedor_preferente || ''
+      });
+      if (precioUnitario > 0) {
+        await dbInsert('material_precios', {
+          material_id: l.material_id,
+          proveedor: f.proveedor,
+          referencia: l.referencia_proveedor || mat?.referencia_proveedor || '',
+          precio: precioUnitario,
+          unidad_compra: l.unidad || mat?.unidad || 'unidad',
+          fecha_precio: f.fecha_factura || today(),
+          proveedor_preferente: false
+        });
+      }
+      await dbUpdate('factura_lineas_clinicas', l.id, { estado: 'validada' });
+    }
+    await dbUpdate('facturas_clinicas', f.id, { estado: 'validada', tipo_impacto: 'stock_precio' });
+    await loadPedidosData(); state.selectedFacturaId = f.id; render(); toast('Factura validada. Stock y precios actualizados.');
+  }
+
+  async function validarFacturaLaboratorio(f) {
+    if (!f.numero_historial) throw new Error('Indica número de historial para validar laboratorio.');
+    const prod = state.produccion.find(p => norm(p.numero_historial) === norm(f.numero_historial));
+    const existing = state.laboratorioCostes.find(l => String(l.factura_id) === String(f.id));
+    const payload = {
+      factura_id: f.id,
+      proveedor: f.proveedor,
+      fecha_factura: f.fecha_factura,
+      numero_factura: f.numero_factura,
+      numero_historial: f.numero_historial,
+      paciente_referencia: f.paciente_referencia,
+      tratamiento_texto: f.tratamiento_texto || f.concepto,
+      produccion_id: prod?.id || null,
+      importe_base: num(f.importe_base),
+      iva: num(f.iva),
+      total: num(f.total),
+      estado_conciliacion: prod ? 'cruzado_historial' : 'pendiente_cruce',
+      observaciones: f.observaciones || ''
+    };
+    if (existing?.id) await dbUpdate('laboratorio_costes', existing.id, payload);
+    else await dbInsert('laboratorio_costes', payload);
+    await dbUpdate('facturas_clinicas', f.id, { estado: prod ? 'validada' : 'pendiente_cruce', tipo_impacto: 'laboratorio_historial' });
+    await loadPedidosData(); state.selectedFacturaId = f.id; render(); toast(prod ? 'Factura de laboratorio validada y cruzada con producción.' : 'Factura validada como laboratorio, pendiente de cruce por historial.');
+  }
+
   function exportCSV(type) {
     const rows = type==='materiales' ? state.materiales.map(m=>({nombre:m.nombre,familia:getMaterialFamily(m),unidad:m.unidad,stock_actual:m.stock_actual,stock_minimo:m.stock_minimo,coste_medio:m.coste_medio,proveedor_preferente:m.proveedor_preferente})) : state.tratamientos.map(t=>({codigo_tto:t.codigo_tto,nombre_tto:t.nombre_tto,familia:familyOf(t),precio_base:t.precio_base,coste_laboratorio_estimado:t.coste_laboratorio_estimado,proveedor_laboratorio:t.proveedor_laboratorio,activo:t.activo}));
     if (!rows.length) return toast('No hay datos para exportar.', true);
@@ -702,7 +876,7 @@
       .ped-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
       .ped-alert{margin:10px 0 14px;padding:10px 12px;border-radius:10px;font-size:13px;min-height:0}.ped-alert:empty{display:none}.ped-alert.ok{background:var(--green-light);color:#075f43}.ped-alert.bad{background:var(--red-light);color:#8e2f19}
       .ped-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:center;margin-bottom:8px}.ped-form.wide{grid-template-columns:repeat(4,minmax(150px,1fr))}.ped-form input,.ped-form select,.ped-filters input,.ped-filters select{height:36px;border:1px solid var(--border2);border-radius:8px;padding:0 10px;font-family:'DM Sans',sans-serif;background:#fff;color:var(--text)}.ped-form .btn{height:36px}
-      .ped-filters{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:end}.filter-field{display:flex;flex-direction:column;gap:4px}.filter-field span{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding-left:2px}.mini{border:1px solid var(--border2);background:#fff;border-radius:8px;padding:5px 8px;font-family:'DM Sans',sans-serif;cursor:pointer}.mini.danger{color:var(--red)}.mini-input{width:90px;height:30px;border:1px solid var(--border2);border-radius:7px;padding:0 8px;background:#fff}.filelabel{display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:6px 10px;display:inline-flex;gap:6px;align-items:center}.mt{margin-top:16px}.sub-tabs{margin-top:-4px;margin-bottom:14px}.clinical-tab.small{font-size:12px;padding:7px 10px}
+      .ped-filters{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:end}.filter-field{display:flex;flex-direction:column;gap:4px}.filter-field span{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding-left:2px}.mini{border:1px solid var(--border2);background:#fff;border-radius:8px;padding:5px 8px;font-family:'DM Sans',sans-serif;cursor:pointer}.mini.danger{color:var(--red)}.btn.danger{background:var(--red);color:#fff}.selected-row{background:#f3f8ff}.factura-detail .chip strong{margin-left:4px}.mini-input{width:90px;height:30px;border:1px solid var(--border2);border-radius:7px;padding:0 8px;background:#fff}.filelabel{display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:6px 10px;display:inline-flex;gap:6px;align-items:center}.mt{margin-top:16px}.sub-tabs{margin-top:-4px;margin-bottom:14px}.clinical-tab.small{font-size:12px;padding:7px 10px}
       @media(max-width:1100px){.ped-form,.ped-form.wide,.ped-filters{grid-template-columns:1fr 1fr}.ped-head{flex-direction:column}.clinical-grid{grid-template-columns:1fr 1fr!important}}
     `; document.head.appendChild(st);
   }
@@ -714,5 +888,5 @@
   window.PEDIDOS_CLINICOS_MODULE_VERSION = VERSION;
   window.bootPedidosClinicos = bootPedidosClinicos;
   document.addEventListener('DOMContentLoaded',()=>setTimeout(bootPedidosClinicos,100));
-  console.log(`MODULO PEDIDOS CLINICOS v${VERSION} cargado: analisis separado de datos, importacion PDF con familia/proveedor y laboratorio por historial`);
+  console.log(`MODULO PEDIDOS CLINICOS v${VERSION} cargado: validacion de facturas, lineas, stock/precios y laboratorio por historial`);
 })();
